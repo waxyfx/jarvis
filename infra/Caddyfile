@@ -1,0 +1,26 @@
+# Caddy obtains and renews a Let's Encrypt certificate automatically, so TLS
+# needs no manual steps beyond pointing DNS at this host.
+
+{$ATLAS_DOMAIN} {
+	encode zstd gzip
+
+	# WebSocket upgrades pass through without extra configuration in Caddy 2.
+	reverse_proxy backend:8000
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		-Server
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		# Credentials must never reach the access log.
+		format json
+	}
+}

@@ -1,0 +1,267 @@
+"""Outbound realtime transport.
+
+The agent always dials out: it never listens on a port, so the Windows machine
+is never exposed to the network. Connection state is a small loop —
+authenticate, connect, handshake, serve — wrapped in reconnection with
+exponential backoff.
+
+Close codes are treated as instructions. Some mean "try again", one means
+"get a new token", and two mean "stop and tell the operator": retrying a
+version mismatch or a revoked device forever would just hide the problem.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import platform
+import random
+import ssl
+from collections.abc import Awaitable, Callable
+
+import websockets
+from websockets.asyncio.client import ClientConnection, connect
+
+from atlas_agent import __version__
+from atlas_agent.backend import BackendClient, BackendError
+from atlas_agent.config import AgentSettings
+from atlas_agent.identity import DeviceIdentity
+from atlas_agent.logging import get_logger
+from atlas_shared.enums import AgentMode
+from atlas_shared.protocol.envelope import PROTOCOL_VERSION
+from atlas_shared.protocol.errors import AtlasProtocolError
+from atlas_shared.protocol.messages import (
+    AgentHello,
+    ConnPong,
+    ErrorPayload,
+    HelloAck,
+    ParsedMessage,
+    build_envelope,
+    parse_message,
+)
+
+__all__ = ["AgentTransport", "FatalTransportError"]
+
+log = get_logger(__name__)
+
+MessageHandler = Callable[[ParsedMessage, ClientConnection], Awaitable[None]]
+
+#: Mirrors atlas_backend.protocol_codes.CloseCode; duplicated rather than
+#: imported because the agent must not depend on the backend package.
+_CLOSE_MALFORMED = 4400
+_CLOSE_UNAUTHORIZED = 4401
+_CLOSE_UNSUPPORTED_VERSION = 4402
+_CLOSE_REVOKED = 4403
+_CLOSE_TIMEOUT = 4408
+_CLOSE_REPLACED = 4409
+_CLOSE_REPLAY = 4410
+
+_FATAL_CLOSE_CODES = {_CLOSE_UNSUPPORTED_VERSION, _CLOSE_REVOKED}
+
+
+class FatalTransportError(RuntimeError):
+    """Reconnecting cannot fix this; the operator has to act."""
+
+
+class AgentTransport:
+    def __init__(
+        self,
+        settings: AgentSettings,
+        identity: DeviceIdentity,
+        *,
+        mode: AgentMode = AgentMode.NORMAL,
+        capabilities: tuple[str, ...] = (),
+        on_message: MessageHandler | None = None,
+    ) -> None:
+        self._settings = settings
+        self._identity = identity
+        self._mode = mode
+        self._capabilities = capabilities
+        self._on_message = on_message
+        self._backend = BackendClient(settings)
+        self._connected = asyncio.Event()
+
+    @property
+    def connected(self) -> asyncio.Event:
+        """Set while a handshaked session is live. Useful for tests and the tray."""
+        return self._connected
+
+    async def run(
+        self,
+        *,
+        stop: asyncio.Event | None = None,
+        max_sessions: int | None = None,
+    ) -> None:
+        """Connect and stay connected until ``stop`` is set.
+
+        Args:
+            max_sessions: Stop after this many completed sessions. Only used by
+                tests; production runs unbounded.
+        """
+        stop_event = stop or asyncio.Event()
+        delay = self._settings.reconnect_initial_s
+        sessions = 0
+
+        while not stop_event.is_set():
+            try:
+                token = await self._backend.authenticate(self._identity)
+                await self._session(token, stop_event)
+                delay = self._settings.reconnect_initial_s
+            except FatalTransportError:
+                raise
+            except (BackendError, OSError, websockets.exceptions.WebSocketException) as exc:
+                delay = self._next_delay(delay, exc)
+                log.warning("agent_reconnecting", error=str(exc), delay_s=round(delay, 1))
+            finally:
+                self._connected.clear()
+
+            sessions += 1
+            if max_sessions is not None and sessions >= max_sessions:
+                return
+            if stop_event.is_set():
+                return
+
+            # Sleep for the backoff, but wake immediately if asked to stop.
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(stop_event.wait(), timeout=delay)
+
+    async def _session(self, token: str, stop: asyncio.Event) -> None:
+        ssl_context: ssl.SSLContext | None = None
+        if self._settings.websocket_url.startswith("wss://") and not self._settings.verify_tls:
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+        async with connect(
+            self._settings.websocket_url,
+            additional_headers={"Authorization": f"Bearer {token}"},
+            open_timeout=self._settings.request_timeout_s,
+            ssl=ssl_context,
+        ) as websocket:
+            await self._handshake(websocket)
+            self._connected.set()
+            log.info("agent_connected", url=self._settings.websocket_url)
+            await self._serve(websocket, stop)
+
+    async def _handshake(self, websocket: ClientConnection) -> None:
+        hello = build_envelope(
+            "agent.hello",
+            AgentHello(
+                agent_version=__version__,
+                protocol_version=PROTOCOL_VERSION,
+                platform=f"{platform.system()}-{platform.release()}",
+                hostname=self._settings.device_name,
+                mode=self._mode,
+                capabilities=self._capabilities,
+            ),
+        )
+        await websocket.send(hello.to_json())
+
+        raw = await asyncio.wait_for(websocket.recv(), timeout=self._settings.request_timeout_s)
+        parsed = parse_message(raw)
+        if parsed.envelope.type != "server.hello_ack":
+            raise FatalTransportError(f"expected server.hello_ack, got {parsed.envelope.type}")
+        if parsed.envelope.corr_id != hello.id:
+            raise FatalTransportError("hello_ack did not correlate with our hello")
+
+        ack = parsed.payload
+        assert isinstance(ack, HelloAck)
+        if ack.protocol_version != PROTOCOL_VERSION:
+            raise FatalTransportError(
+                f"backend speaks protocol {ack.protocol_version}, agent speaks "
+                f"{PROTOCOL_VERSION}; upgrade the agent"
+            )
+
+    async def _serve(self, websocket: ClientConnection, stop: asyncio.Event) -> None:
+        receive = asyncio.ensure_future(self._receive_loop(websocket))
+        waiter = asyncio.ensure_future(stop.wait())
+        try:
+            done, _ = await asyncio.wait({receive, waiter}, return_when=asyncio.FIRST_COMPLETED)
+            if receive in done:
+                receive.result()  # re-raise whatever ended the loop
+            else:
+                await websocket.close(1001)
+        finally:
+            for task in (receive, waiter):
+                task.cancel()
+
+    async def _receive_loop(self, websocket: ClientConnection) -> None:
+        try:
+            async for raw in websocket:
+                await self._handle(raw, websocket)
+        except websockets.exceptions.ConnectionClosed as exc:
+            code = _close_code(exc)
+            if code in _FATAL_CLOSE_CODES:
+                raise FatalTransportError(_explain_close(code)) from exc
+            raise
+
+    async def _handle(self, raw: str | bytes, websocket: ClientConnection) -> None:
+        try:
+            parsed = parse_message(raw)
+        except AtlasProtocolError as exc:
+            # The backend sent something this agent cannot read. Log it and keep
+            # the connection: dropping it would turn a single bad frame into an
+            # outage.
+            log.warning("agent_unparseable_frame", code=exc.code.value, error=exc.message)
+            return
+
+        message_type = parsed.envelope.type
+
+        if message_type == "conn.ping":
+            await websocket.send(
+                build_envelope("conn.pong", ConnPong(), corr_id=parsed.envelope.id).to_json()
+            )
+            return
+
+        if message_type == "server.error":
+            payload = parsed.payload
+            assert isinstance(payload, ErrorPayload)
+            log.warning("agent_server_error", code=payload.code.value, message=payload.message)
+            return
+
+        if self._on_message is not None:
+            await self._on_message(parsed, websocket)
+            return
+
+        log.info("agent_unhandled_message", type=message_type)
+
+    def _next_delay(self, current: float, error: Exception) -> float:
+        if _is_unauthorized(error):
+            # The token expired or was rejected; a fresh one is cheap, so retry
+            # promptly rather than backing off.
+            return self._settings.reconnect_initial_s
+        if _close_code_of(error) == _CLOSE_REPLACED:
+            # Another agent instance took our place. Waiting longer avoids two
+            # processes fighting over the connection.
+            return self._settings.reconnect_replaced_s
+
+        jitter = random.uniform(0.8, 1.2)  # noqa: S311 - jitter, not cryptography
+        return min(current * 2 * jitter, self._settings.reconnect_max_s)
+
+
+def _close_code(exc: websockets.exceptions.ConnectionClosed) -> int | None:
+    for frame in (exc.rcvd, exc.sent):
+        if frame is not None:
+            return int(frame.code)
+    return None
+
+
+def _close_code_of(error: Exception) -> int | None:
+    if isinstance(error, websockets.exceptions.ConnectionClosed):
+        return _close_code(error)
+    return None
+
+
+def _is_unauthorized(error: Exception) -> bool:
+    if _close_code_of(error) == _CLOSE_UNAUTHORIZED:
+        return True
+    status = getattr(getattr(error, "response", None), "status_code", None)
+    return status in (401, 403)
+
+
+def _explain_close(code: int | None) -> str:
+    if code == _CLOSE_UNSUPPORTED_VERSION:
+        return "backend rejected this agent's protocol version; upgrade the agent"
+    if code == _CLOSE_REVOKED:
+        return "this device has been revoked; pair it again to restore access"
+    return f"connection closed with code {code}"

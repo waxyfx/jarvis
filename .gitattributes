@@ -1,0 +1,19 @@
+# Normalise line endings in the repository; check out native on each platform.
+* text=auto
+
+# These are consumed by Linux tooling and must stay LF even on Windows.
+*.sh          text eol=lf
+Dockerfile    text eol=lf
+*.Dockerfile  text eol=lf
+Caddyfile     text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+
+# PowerShell is happier with CRLF.
+*.ps1         text eol=crlf
+
+# Never diff or merge these as text.
+*.png         binary
+*.jpg         binary
+*.ico         binary
+uv.lock       -diff

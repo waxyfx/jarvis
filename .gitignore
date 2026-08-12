@@ -1,0 +1,59 @@
+# --- secrets: never commit ---
+# Environment files hold the JWT secret, bootstrap token and database DSN.
+.env
+.env.*
+!.env.example
+
+# Private keys and certificates in any form.
+*.pem
+*.p8
+*.key
+*.pfx
+*.crt
+id_ed25519*
+id_rsa*
+secrets/
+
+# The agent's device identity. DPAPI-encrypted, but machine-specific and never
+# useful to anyone else — there is no reason for it to enter version control.
+**/atlas_device_key*
+**/agent_identity*.json
+**/identity.json
+
+# Database dumps taken per docs/runbook.md.
+*.sql
+*.sql.gz
+*.dump
+
+# Pairing codes or tokens captured while debugging.
+*.token
+*.secret
+
+# --- local dev tooling (reproduced by scripts/bootstrap_dev.ps1) ---
+.tools/
+.pgdata/
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# --- editors / os ---
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+
+# --- runtime artifacts ---
+logs/
+*.log

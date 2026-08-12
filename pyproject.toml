@@ -1,0 +1,98 @@
+[project]
+name = "atlas"
+version = "0.1.0"
+description = "ATLAS — personal distributed AI assistant"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "atlas-shared",
+    "atlas-backend",
+    "atlas-agent-windows",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+atlas-shared = { workspace = true }
+atlas-backend = { workspace = true }
+atlas-agent-windows = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    # Starlette's TestClient uses httpx2; httpx (v1) still works but warns.
+    "httpx2",
+    "ruff>=0.7",
+    "mypy>=1.13",
+]
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["packages/*/src", "packages/*/tests", "e2e"]
+# Explicit rather than relying on .gitignore: these directories hold vendored
+# binaries and the virtualenv, and must be skipped whether or not the working
+# tree is a git repository.
+extend-exclude = [".venv", ".tools", ".pgdata", "migrations/versions"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",   # pycodestyle / pyflakes
+    "I",             # isort
+    "N",             # pep8-naming
+    "UP",            # pyupgrade
+    "B",             # bugbear
+    "S",             # bandit (security)
+    "A",             # builtins shadowing
+    "C4",            # comprehensions
+    "RUF",
+]
+ignore = [
+    "S101",  # assert — used in tests
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test fixtures legitimately contain literal secrets and non-crypto randomness.
+"**/tests/**" = ["S105", "S106", "S311"]
+"e2e/**" = ["S105", "S106", "S311"]
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+disallow_untyped_defs = true
+mypy_path = [
+    "packages/atlas-shared/src",
+    "packages/atlas-backend/src",
+    "packages/atlas-agent-windows/src",
+]
+explicit_package_bases = true
+# Type-check shipped code. Tests are checked by running them.
+files = [
+    "packages/atlas-shared/src",
+    "packages/atlas-backend/src",
+    "packages/atlas-agent-windows/src",
+]
+
+[[tool.mypy.overrides]]
+module = ["win32crypt.*", "win32api.*", "pywintypes.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["packages", "e2e"]
+python_files = ["test_*.py"]
+addopts = "-q --strict-markers"
+markers = [
+    "integration: requires a live PostgreSQL (ATLAS_TEST_DATABASE_URL)",
+    "windows: requires Windows-only APIs",
+]
