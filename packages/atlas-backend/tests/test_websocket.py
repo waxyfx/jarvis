@@ -13,15 +13,17 @@ from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from atlas_backend.protocol_codes import CloseCode
-from atlas_shared.enums import AgentMode, DeviceKind, MessageKind
+from atlas_shared.crypto import generate_keypair
+from atlas_shared.enums import AgentMode, DeviceKind, MessageKind, ToolStatus
 from atlas_shared.ids import new_ulid
-from atlas_shared.protocol.envelope import PROTOCOL_VERSION, Envelope
+from atlas_shared.protocol.envelope import PROTOCOL_VERSION, Envelope, sign_envelope
 from atlas_shared.protocol.messages import (
     AgentHello,
     ClientHello,
     ConnPing,
     HelloAck,
     ModeChanged,
+    ToolResult,
     build_envelope,
     parse_message,
 )
@@ -288,8 +290,12 @@ class TestConnectionLifecycle:
             handshake(ws)
 
             assert wait_for_sql("SELECT seq FROM audit_log WHERE event_type = 'connection.opened'")
+            # Filter on the flag rather than reading it: the row exists before
+            # the handshake is recorded, so a bare SELECT would satisfy
+            # wait_for_sql immediately and read the value mid-flight.
             sessions = wait_for_sql(
-                "SELECT handshake_ok FROM device_sessions WHERE device_id = :device_id",
+                "SELECT handshake_ok FROM device_sessions "
+                "WHERE device_id = :device_id AND handshake_ok IS TRUE",
                 device_id=device.device_id,
             )
             assert sessions == [(True,)]
@@ -315,6 +321,76 @@ class TestConnectionLifecycle:
             handshake(ws)
             listed = client.get("/v1/devices", headers=headers).json()
             assert listed[0]["connected"] is True
+
+
+class TestToolResultSignatures:
+    """A result is only believed if the device that ran it signed it."""
+
+    @staticmethod
+    def _result_envelope() -> Envelope:
+        return build_envelope(
+            "agent.tool.result",
+            ToolResult(
+                call_id=new_ulid(),
+                tool="system.metrics",
+                status=ToolStatus.OK,
+                result={"ram_total_mb": 1},
+                duration_ms=1,
+            ),
+            corr_id=new_ulid(),
+        )
+
+    def test_a_result_signed_by_a_foreign_key_is_refused(self, client: TestClient) -> None:
+        _, token = paired_and_authenticated(client)
+        attacker_private, _ = generate_keypair()
+
+        with connect(client, token) as ws:
+            handshake(ws)
+            ws.send_text(sign_envelope(self._result_envelope(), attacker_private).to_json())
+
+            parsed = parse_message(ws.receive_text())
+            assert parsed.envelope.kind is MessageKind.ERR
+            assert parsed.payload.code == "signature_invalid"  # type: ignore[attr-defined]
+
+        assert wait_for_sql("SELECT seq FROM audit_log WHERE event_type = 'tool.result_unverified'")
+
+    def test_an_unsigned_result_is_refused(self, client: TestClient) -> None:
+        _, token = paired_and_authenticated(client)
+
+        with connect(client, token) as ws:
+            handshake(ws)
+            ws.send_text(self._result_envelope().to_json())
+
+            parsed = parse_message(ws.receive_text())
+            assert parsed.envelope.kind is MessageKind.ERR
+            assert parsed.payload.code == "signature_invalid"  # type: ignore[attr-defined]
+
+    def test_a_tampered_result_is_refused(self, client: TestClient) -> None:
+        device, token = paired_and_authenticated(client)
+
+        with connect(client, token) as ws:
+            handshake(ws)
+            signed = sign_envelope(self._result_envelope(), device.private_key)
+            tampered = signed.model_copy(update={"payload": {**signed.payload, "status": "error"}})
+            ws.send_text(tampered.to_json())
+
+            parsed = parse_message(ws.receive_text())
+            assert parsed.payload.code == "signature_invalid"  # type: ignore[attr-defined]
+
+    def test_a_correctly_signed_result_is_accepted(self, client: TestClient) -> None:
+        device, token = paired_and_authenticated(client)
+
+        with connect(client, token) as ws:
+            handshake(ws)
+            ws.send_text(sign_envelope(self._result_envelope(), device.private_key).to_json())
+
+            # Nothing is waiting for this correlation id, so the server drops it
+            # quietly. What matters is that no error came back and the socket is
+            # still usable — the signature was accepted.
+            ping = build_envelope("conn.ping", ConnPing())
+            ws.send_text(ping.to_json())
+            answer = parse_message(ws.receive_text())
+            assert answer.envelope.type == "conn.pong"
 
 
 class TestHeartbeat:

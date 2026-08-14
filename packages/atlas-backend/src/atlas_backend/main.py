@@ -21,7 +21,9 @@ from atlas_backend.config import Settings, get_settings
 from atlas_backend.db.session import Database
 from atlas_backend.errors import install_exception_handlers
 from atlas_backend.logging import configure_logging, get_logger
+from atlas_backend.policy import ToolDispatcher
 from atlas_backend.ratelimit import SlidingWindowLimiter
+from atlas_backend.server_identity import ServerIdentity
 from atlas_backend.ws import Hub, ws_router
 
 __all__ = ["create_app"]
@@ -37,10 +39,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = resolved
         app.state.database = Database(resolved)
+        app.state.server_identity = ServerIdentity(resolved)
         app.state.token_service = TokenService(resolved)
         app.state.challenge_service = ChallengeService(resolved)
         app.state.pairing_service = PairingService(resolved)
         app.state.hub = Hub()
+        app.state.dispatcher = ToolDispatcher(
+            hub=app.state.hub,
+            server_identity=app.state.server_identity,
+            settings=resolved,
+        )
         app.state.pairing_limiter = SlidingWindowLimiter(
             limit=resolved.pairing_rate_limit_per_minute, window_s=60.0
         )

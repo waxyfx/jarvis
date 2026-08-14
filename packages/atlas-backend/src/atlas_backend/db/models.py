@@ -16,6 +16,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -30,11 +31,15 @@ from atlas_backend.db.base import Base, utc_now
 from atlas_shared.enums import DeviceKind, TrustLevel
 
 __all__ = [
+    "ActivitySampleRow",
     "AuditLog",
     "AuthChallenge",
     "Device",
     "DeviceSession",
     "PairingCode",
+    "PermissionOverrideRow",
+    "SystemTelemetryRow",
+    "ToolCall",
     "User",
 ]
 
@@ -147,6 +152,108 @@ class DeviceSession(Base):
     close_reason: Mapped[str | None] = mapped_column(String(120), default=None)
     #: Set when the peer completed a valid hello handshake.
     handshake_ok: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class ToolCall(Base):
+    """One request to run a tool, from policy decision to final outcome.
+
+    Written before anything is dispatched, so a command that is denied — or that
+    never comes back — is as visible as one that succeeded.
+    """
+
+    __tablename__ = "tool_calls"
+    __table_args__ = (
+        Index("ix_tool_calls_device_id_created_at", "device_id", "created_at"),
+        Index("ix_tool_calls_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    device_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    requested_by_device_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, default=None)
+
+    tool_name: Mapped[str] = mapped_column(String(64))
+    tool_version: Mapped[int] = mapped_column(Integer)
+    args: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+    #: What the server's policy computed.
+    risk_assessed: Mapped[str] = mapped_column(String(16))
+    decision: Mapped[str] = mapped_column(String(16))
+    #: Human-readable rule reasons, in the order they applied.
+    policy_reasons: Mapped[list[str]] = mapped_column(JSONB, default=list)
+
+    status: Mapped[str] = mapped_column(String(24))
+    confirmed_by_device_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, default=None)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+    #: What the *agent* independently computed. A divergence is a signal, not a
+    #: formality, so it is stored rather than discarded.
+    risk_local: Mapped[str | None] = mapped_column(String(16), default=None)
+    refusal: Mapped[str | None] = mapped_column(String(32), default=None)
+
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    error: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, default=None)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+class PermissionOverrideRow(Base):
+    """A standing user decision that adjusts the default policy for a tool.
+
+    Overrides may make policy *stricter* freely. They may only relax it for LOW
+    and MEDIUM risk — HIGH always requires a fresh confirmation, and DENY is
+    never negotiable. That rule lives in the engine, not here.
+    """
+
+    __tablename__ = "permissions"
+    __table_args__ = (
+        CheckConstraint("mode IN ('always_allow', 'always_confirm', 'deny')", name="mode_known"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    #: Exact tool name, or a prefix pattern ending in ``.*`` (e.g. ``fs.*``).
+    tool_pattern: Mapped[str] = mapped_column(String(64))
+    mode: Mapped[str] = mapped_column(String(16))
+    scope: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ActivitySampleRow(Base):
+    """Foreground application and idle state.
+
+    There is deliberately **no column for window titles, keystrokes or clipboard
+    contents**. The schema is the enforcement: a future change that wanted to
+    store them would have to be a visible migration, not a quiet code edit.
+    """
+
+    __tablename__ = "activity_samples"
+    __table_args__ = (Index("ix_activity_samples_ts", "ts"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    device_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    process_name: Mapped[str] = mapped_column(String(128))
+    is_idle: Mapped[bool] = mapped_column(Boolean)
+    idle_seconds: Mapped[int] = mapped_column(Integer)
+
+
+class SystemTelemetryRow(Base):
+    __tablename__ = "system_telemetry"
+    __table_args__ = (Index("ix_system_telemetry_ts", "ts"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    device_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    cpu_pct: Mapped[float] = mapped_column(Float)
+    ram_used_pct: Mapped[float] = mapped_column(Float)
+    ram_total_mb: Mapped[int] = mapped_column(Integer)
+    disks: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    uptime_s: Mapped[int] = mapped_column(BigInteger)
+    gpu_temp_c: Mapped[float | None] = mapped_column(Float, default=None)
 
 
 class AuditLog(Base):

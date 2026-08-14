@@ -71,15 +71,60 @@ with its bearer token, choosing `"kind": "ios"` for the phone.
 
 The agent must run **in your interactive session**, not as a service: a Session 0
 service cannot see your desktop, which later phases need for input and screen
-capture. Register a logon task:
+capture.
 
 ```bash
-schtasks /Create /TN "ATLAS Agent" /TR "\"%LOCALAPPDATA%\\uv\\tools\\atlas-agent.exe\" run" /SC ONLOGON /RL LIMITED
+uv run atlas-agent autostart install
 ```
 
-`/RL LIMITED` is intentional. Running the agent without administrator rights is
-a security property, not an oversight: it means ATLAS cannot inject input into
-elevated windows or touch the UAC prompt at all.
+```bash
+uv run atlas-agent autostart status
+```
+
+```bash
+uv run atlas-agent autostart uninstall
+```
+
+This writes one value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+No elevation is needed, and none is requested.
+
+A scheduled task would have been the tidier mechanism, but every
+`schtasks /SC ONLOGON` variant is refused with *Access is denied* for a
+non-elevated caller on Windows 11 — logon triggers are administrative. Requiring
+a UAC prompt to install the agent was the worse trade.
+
+Running unelevated is a security property, not an oversight: it means ATLAS
+cannot inject input into elevated windows or touch the UAC prompt at all.
+
+## The kill switch
+
+Three routes, all local, none of which touch the network:
+
+* the tray menu — **SAFE MODE (kill switch)**;
+* the global hotkey `Ctrl+Alt+Shift+A`;
+* the command line:
+
+```bash
+uv run atlas-agent safe-mode on
+```
+
+```bash
+uv run atlas-agent safe-mode status
+```
+
+In SAFE MODE the agent runs low-risk local reads and nothing else. Cloud vision
+is refused unconditionally, and no confirmation can lift the restriction.
+
+**There is no remote release.** The protocol has a message to enter SAFE MODE and
+none to leave it, and the controller refuses any non-local caller. Releasing it
+requires a person at this machine:
+
+```bash
+uv run atlas-agent safe-mode off
+```
+
+State is persisted, so a restart does not clear it. If the state file is ever
+unreadable, the agent starts in SAFE MODE and says so.
 
 ## Routine checks
 

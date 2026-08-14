@@ -30,6 +30,8 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 TEST_DATABASE_URL = os.getenv("ATLAS_TEST_DATABASE_URL", "")
 TEST_JWT_SECRET = "test-jwt-secret-that-is-long-enough-for-prod-rules"
 TEST_BOOTSTRAP_TOKEN = "test-bootstrap-token"
+#: Fixed so every test run pins the same server identity.
+TEST_SERVER_SIGNING_KEY = b64u_encode(bytes(range(32)))
 
 requires_db = pytest.mark.skipif(
     not TEST_DATABASE_URL,
@@ -54,6 +56,7 @@ def _make_settings():  # type: ignore[no-untyped-def]
         log_level="WARNING",
         database_url=TEST_DATABASE_URL or "postgresql+asyncpg://unused/unused",
         jwt_secret=TEST_JWT_SECRET,  # type: ignore[arg-type]
+        server_signing_key=TEST_SERVER_SIGNING_KEY,  # type: ignore[arg-type]
         bootstrap_token=TEST_BOOTSTRAP_TOKEN,  # type: ignore[arg-type]
         owner_display_name="Test Owner",
         database_use_null_pool=True,
@@ -107,6 +110,7 @@ def _migrated_schema() -> Iterator[None]:
 
     os.environ["ATLAS_DATABASE_URL"] = TEST_DATABASE_URL
     os.environ["ATLAS_JWT_SECRET"] = TEST_JWT_SECRET
+    os.environ["ATLAS_SERVER_SIGNING_KEY"] = TEST_SERVER_SIGNING_KEY
     get_settings.cache_clear()
 
     asyncio.run(_reset_schema(TEST_DATABASE_URL))

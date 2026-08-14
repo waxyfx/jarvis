@@ -11,13 +11,20 @@ import asyncio
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 from fastapi import WebSocket
 
 from atlas_backend.db.base import utc_now
 from atlas_backend.protocol_codes import CloseCode
+from atlas_shared.enums import AgentMode
+from atlas_shared.protocol.envelope import Envelope
 
-__all__ = ["Connection", "Hub"]
+__all__ = ["Connection", "DeviceOfflineError", "Hub"]
+
+
+class DeviceOfflineError(RuntimeError):
+    """A command was addressed to a device that is not connected."""
 
 
 @dataclass(slots=True)
@@ -26,9 +33,15 @@ class Connection:
     device_kind: str
     session_id: uuid.UUID
     websocket: WebSocket
+    #: Kept on the connection so a signed result can be verified without a
+    #: database round trip on every message.
+    public_key: bytes = b""
     connected_at: datetime = field(default_factory=utc_now)
     last_seen_at: datetime = field(default_factory=utc_now)
     handshake_complete: bool = False
+    #: Last mode the agent reported. Advisory only — the agent enforces SAFE
+    #: MODE itself and this copy may lag by one message.
+    mode: AgentMode = AgentMode.NORMAL
 
     def touch(self) -> None:
         self.last_seen_at = utc_now()
@@ -38,6 +51,9 @@ class Hub:
     def __init__(self) -> None:
         self._connections: dict[uuid.UUID, Connection] = {}
         self._lock = asyncio.Lock()
+        #: Outstanding request/response exchanges, keyed by the request's
+        #: envelope id — which the peer echoes back as ``corr_id``.
+        self._pending: dict[str, asyncio.Future[Any]] = {}
 
     async def register(self, connection: Connection) -> None:
         """Add a connection, evicting any existing one for the same device."""
@@ -75,6 +91,34 @@ class Hub:
         except (RuntimeError, ConnectionError):
             # The socket died between the lookup and the write.
             return False
+        return True
+
+    async def request(self, device_id: uuid.UUID, envelope: Envelope, *, timeout_s: float) -> Any:
+        """Send ``envelope`` and wait for the peer's correlated answer.
+
+        Raises:
+            DeviceOfflineError: the device has no live connection.
+            TimeoutError: no answer arrived within ``timeout_s``.
+        """
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[Any] = loop.create_future()
+        self._pending[envelope.id] = future
+
+        try:
+            if not await self.send(device_id, envelope.to_json()):
+                raise DeviceOfflineError(f"device {device_id} is not connected")
+            return await asyncio.wait_for(future, timeout=timeout_s)
+        finally:
+            self._pending.pop(envelope.id, None)
+
+    def resolve(self, corr_id: str | None, answer: Any) -> bool:
+        """Hand an answer to whoever is waiting for it. False if nobody is."""
+        if corr_id is None:
+            return False
+        future = self._pending.get(corr_id)
+        if future is None or future.done():
+            return False
+        future.set_result(answer)
         return True
 
     async def disconnect(self, device_id: uuid.UUID, *, reason: str) -> bool:

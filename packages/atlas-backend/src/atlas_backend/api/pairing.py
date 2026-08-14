@@ -139,6 +139,9 @@ async def complete_pairing(
         kind=DeviceKind(device.kind),
         name=device.name,
         trust_level=TrustLevel(device.trust_level),
+        # Handed over exactly once, during enrolment, over the same channel that
+        # already proved possession of the pairing code.
+        server_public_key=request.app.state.server_identity.public_key_b64,
     )
 
 

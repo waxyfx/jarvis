@@ -42,6 +42,13 @@ function New-Secret([int]$length) {
     -join ((48..57) + (65..90) + (97..122) | Get-Random -Count $length | ForEach-Object { [char]$_ })
 }
 
+function New-SigningKey {
+    # Ed25519 seed: 32 cryptographically random bytes, base64url without padding.
+    $bytes = New-Object byte[] 32
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+}
+
 # ---------------------------------------------------------------- uv
 Write-Step "uv"
 $uv = (Get-Command uv -ErrorAction SilentlyContinue).Source
@@ -146,6 +153,7 @@ if (Test-Path $envPath) {
         "ATLAS_LOG_LEVEL=INFO",
         "ATLAS_DATABASE_URL=postgresql+asyncpg://postgres:$password@127.0.0.1:$Port/atlas_dev",
         "ATLAS_JWT_SECRET=$(New-Secret 48)",
+        "ATLAS_SERVER_SIGNING_KEY=$(New-SigningKey)",
         "ATLAS_BOOTSTRAP_TOKEN=$(New-Secret 32)",
         "ATLAS_OWNER_DISPLAY_NAME=Owner",
         "ATLAS_OWNER_LANGUAGE=ru",

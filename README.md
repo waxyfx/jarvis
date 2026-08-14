@@ -3,10 +3,13 @@
 A personal AI assistant distributed across a Windows PC, an iPhone and a small
 always-on backend.
 
-**Current state: M1 complete — foundation, device identity, audit, realtime
-transport.** ATLAS cannot yet do anything to your computer: no tools are
-executed, no AI model is called, no microphone is opened. Those arrive in M2–M4.
-See [docs/PHASE-0.1-DECISIONS.md](docs/PHASE-0.1-DECISIONS.md) for the roadmap.
+**Current state: M2 complete — the agent can act on this machine, under a
+deterministic permission model.** Six typed Windows tools, signed commands, a
+Policy Engine, a path guard, a local kill switch and metadata-only activity
+monitoring.
+
+No AI model is called and no microphone is opened yet: that is M3 and M4. See
+[docs/PHASE-0.1-DECISIONS.md](docs/PHASE-0.1-DECISIONS.md) for the roadmap.
 
 ## Documentation
 
@@ -16,9 +19,11 @@ See [docs/PHASE-0.1-DECISIONS.md](docs/PHASE-0.1-DECISIONS.md) for the roadmap.
 | [PHASE-0.1-DECISIONS.md](docs/PHASE-0.1-DECISIONS.md) | Tracker integration, STT strategy, MVP-first roadmap |
 | [VISION-POLICY.md](docs/VISION-POLICY.md) | When a screenshot may leave the machine, and SAFE MODE |
 | [protocol.md](docs/protocol.md) | Wire protocol: envelopes, signatures, close codes |
+| [tools.md](docs/tools.md) | Every Windows capability, its risk class and its guard |
 | [security.md](docs/security.md) | Threat model and the controls that answer it |
-| [runbook.md](docs/runbook.md) | Deploying, operating, recovering |
+| [runbook.md](docs/runbook.md) | Deploying, operating, the kill switch, recovering |
 | [M1-REPORT.md](docs/M1-REPORT.md) | What M1 delivered, with test and review results |
+| [M2-REPORT.md](docs/M2-REPORT.md) | What M2 delivered, including the failure-mode review |
 
 ## Layout
 

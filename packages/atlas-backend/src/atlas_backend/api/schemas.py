@@ -26,6 +26,7 @@ __all__ = [
     "PairStartRequest",
     "PairStartResponse",
     "ReadinessResponse",
+    "ServerIdentityResponse",
     "TokenRequest",
     "TokenResponse",
 ]
@@ -100,6 +101,13 @@ class PairCompleteResponse(BaseModel):
     kind: DeviceKind
     name: str
     trust_level: TrustLevel
+    #: The device pins this and refuses commands signed by any other key.
+    server_public_key: str
+
+
+class ServerIdentityResponse(BaseModel):
+    public_key: str
+    algorithm: str = "ed25519"
 
 
 class ChallengeRequest(_Body):

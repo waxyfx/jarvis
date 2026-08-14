@@ -84,6 +84,40 @@ class Priority(StrEnum):
     CRITICAL = "critical"
 
 
+class ToolStatus(StrEnum):
+    """Outcome of a tool invocation, as reported by the agent."""
+
+    OK = "ok"
+    #: The tool ran and failed. ``error`` carries the reason.
+    ERROR = "error"
+    #: The agent refused before running anything — SAFE MODE, path guard, a
+    #: risk reassessment, or a signature it would not accept.
+    REFUSED = "refused"
+    TIMEOUT = "timeout"
+    CANCELLED = "cancelled"
+    #: Declared in the catalogue but no executor is bound on this agent.
+    NOT_IMPLEMENTED = "not_implemented"
+
+
+class RefusalReason(StrEnum):
+    """Why the agent refused. Recorded verbatim in the audit trail."""
+
+    SAFE_MODE = "safe_mode"
+    PATH_OUTSIDE_ROOTS = "path_outside_roots"
+    PATH_DENYLISTED = "path_denylisted"
+    RISK_TOO_HIGH_LOCALLY = "risk_too_high_locally"
+    SIGNATURE_INVALID = "signature_invalid"
+    UNKNOWN_SERVER_KEY = "unknown_server_key"
+    ARGS_INVALID = "args_invalid"
+    UNKNOWN_TOOL = "unknown_tool"
+    RATE_LIMITED = "rate_limited"
+    #: This exact command was already delivered once.
+    REPLAYED = "replayed"
+    #: The command's timestamp is outside the freshness window — it was captured
+    #: earlier and delivered late, or the clocks have drifted too far apart.
+    EXPIRED = "expired"
+
+
 class CaptureScope(StrEnum):
     """Screen capture breadth, narrowest first (VISION-POLICY.md R2)."""
 

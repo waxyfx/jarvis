@@ -1,7 +1,11 @@
 """Console entry point: ``atlas-agent``.
 
-Three commands, matching the three things an operator does: enrol the machine
-once, check what state it is in, and run it.
+Commands map to what an operator actually does: enrol the machine, see what
+state it is in, run it, work the kill switch, and manage autostart.
+
+Note what is missing: there is no command, flag or API that *disables* the kill
+switch from anywhere but this machine. ``safe-mode off`` runs locally, by a
+person at the keyboard, and that is the only way out.
 """
 
 from __future__ import annotations
@@ -10,19 +14,34 @@ import argparse
 import asyncio
 import signal
 import sys
+import threading
 
+from atlas_agent import autostart
 from atlas_agent.backend import BackendClient, BackendError
 from atlas_agent.config import AgentSettings, get_agent_settings
 from atlas_agent.identity import IdentityStore, IdentityStoreError
 from atlas_agent.logging import configure_logging, get_logger
+from atlas_agent.monitor import ActivityMonitor
+from atlas_agent.runner import ToolRunner
+from atlas_agent.safety.mode import ModeChangeSource, SafeModeController
+from atlas_agent.safety.paths import PathGuard
 from atlas_agent.transport import AgentTransport, FatalTransportError
+from atlas_agent.tray import DEFAULT_HOTKEY_LABEL, GlobalHotkey, TrayApplication
 from atlas_shared.auth import normalise_pairing_code
+from atlas_shared.tools.manifest import RiskContext
 
 log = get_logger(__name__)
 
 
 def _store(settings: AgentSettings) -> IdentityStore:
     return IdentityStore(settings.identity_path, allow_plaintext=settings.allow_plaintext_key)
+
+
+def _controller(settings: AgentSettings) -> SafeModeController:
+    return SafeModeController(settings.mode_state_path)
+
+
+# ------------------------------------------------------------------ commands
 
 
 async def _pair(settings: AgentSettings, code: str) -> int:
@@ -42,40 +61,118 @@ async def _pair(settings: AgentSettings, code: str) -> int:
 
     print(f"Paired. Device id: {enrolled.device_id}")
     print(f"Identity stored at: {store.path}")
+    print("Server key pinned; commands signed by any other key will be refused.")
     return 0
 
 
 async def _status(settings: AgentSettings) -> int:
     store = _store(settings)
     identity = store.load()
+    controller = _controller(settings)
 
-    print(f"Backend:  {settings.backend_url}")
-    print(f"Identity: {store.path}")
+    print(f"Backend:    {settings.backend_url}")
+    print(f"Identity:   {store.path}")
     if identity is None:
-        print("State:    not paired")
+        print("State:      not paired")
     elif not identity.is_enrolled:
-        print("State:    key generated but not enrolled")
+        print("State:      key generated but not enrolled")
     else:
-        print(f"State:    paired as {identity.device_id}")
+        print(f"State:      paired as {identity.device_id}")
+        if not identity.can_accept_commands:
+            print("            ⚠ no pinned server key — re-pair before commands will run")
+
+    mode = controller.current
+    print(f"Mode:       {mode.mode.value} ({mode.reason})")
+    print(f"Monitoring: {'enabled' if settings.monitor_enabled else 'disabled'}")
+    print(f"File roots: {', '.join(settings.allowed_file_roots) or '(none configured)'}")
+
+    autostart_state = autostart.status()
+    print(f"Autostart:  {'installed' if autostart_state.installed else 'not installed'}")
 
     try:
-        status = await BackendClient(settings).pairing_status()
-        print(f"Reachable: yes (devices registered: {status['devices']})")
+        backend_state = await BackendClient(settings).pairing_status()
+        print(f"Reachable:  yes (devices registered: {backend_state['devices']})")
     except BackendError as exc:
-        print(f"Reachable: no ({exc})")
-        return 1
+        print(f"Reachable:  no ({exc})")
+        # Not an error condition: SAFE MODE and local controls work offline.
     return 0
 
 
-async def _run(settings: AgentSettings) -> int:
+def _safe_mode(settings: AgentSettings, action: str) -> int:
+    controller = _controller(settings)
+
+    if action == "on":
+        change = controller.enter_safe_mode(
+            "engaged from the command line", ModeChangeSource.LOCAL_CLI
+        )
+        print(f"SAFE MODE engaged at {change.at.isoformat()}.")
+        print("Only low-risk local reads will run. Cloud vision is disabled.")
+        return 0
+
+    if action == "off":
+        change = controller.leave_safe_mode(ModeChangeSource.LOCAL_CLI)
+        print(f"SAFE MODE released at {change.at.isoformat()}.")
+        return 0
+
+    current = controller.current
+    print(f"Mode:   {current.mode.value}")
+    print(f"Reason: {current.reason}")
+    print(f"Source: {current.source.value}")
+    print(f"Since:  {current.at.isoformat()}")
+    print(f"State:  {settings.mode_state_path}")
+    return 0
+
+
+def _autostart(action: str) -> int:
+    if action == "install":
+        state = autostart.install()
+        print(f"Autostart installed: {state.detail}")
+        print("Runs at logon, in your session, with limited privileges (no administrator rights).")
+        return 0
+    if action == "uninstall":
+        autostart.uninstall()
+        print("Autostart removed.")
+        return 0
+
+    state = autostart.status()
+    print(f"Autostart: {'installed' if state.installed else 'not installed'}")
+    if state.installed:
+        print(f"           {state.detail}")
+    return 0
+
+
+async def _run(settings: AgentSettings, *, with_tray: bool) -> int:
     store = _store(settings)
     identity = store.load()
     if identity is None or not identity.is_enrolled:
         print("Not paired. Run: atlas-agent pair --code XXXX-XXXX")
         return 1
 
+    controller = _controller(settings)
+    if controller.is_safe:
+        log.warning("agent_starting_in_safe_mode", reason=controller.current.reason)
+
+    runner = ToolRunner(
+        safe_mode=controller,
+        path_guard=PathGuard(
+            settings.allowed_file_roots, extra_denied=settings.denied_path_patterns
+        ),
+        risk_context=RiskContext(
+            allowed_roots=settings.allowed_file_roots,
+            executable_roots=settings.allowed_executable_roots,
+        ),
+    )
+    monitor = ActivityMonitor(settings)
+    transport = AgentTransport(
+        settings, identity, runner=runner, safe_mode=controller, monitor=monitor
+    )
+
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
+
+    def request_stop() -> None:
+        loop.call_soon_threadsafe(stop.set)
+
     for signal_name in ("SIGINT", "SIGTERM"):
         signal_number = getattr(signal, signal_name, None)
         if signal_number is None:
@@ -84,16 +181,45 @@ async def _run(settings: AgentSettings) -> int:
             loop.add_signal_handler(signal_number, stop.set)
         except NotImplementedError:
             # Windows event loops do not support add_signal_handler; the
-            # KeyboardInterrupt path below covers Ctrl+C there.
+            # KeyboardInterrupt path in main() covers Ctrl+C there.
             signal.signal(signal_number, lambda *_: stop.set())
 
-    transport = AgentTransport(settings, identity)
+    tray = TrayApplication(safe_mode=controller, monitor=monitor, on_quit=request_stop)
+
+    hotkey: GlobalHotkey | None = None
+    if settings.enable_hotkey:
+
+        def engage() -> None:
+            # Local, immediate, and independent of the network: this is what
+            # makes it a kill switch rather than a request.
+            controller.toggle(ModeChangeSource.LOCAL_HOTKEY)
+            log.info("hotkey_pressed", mode=controller.mode.value)
+            tray.refresh()
+
+        hotkey = GlobalHotkey(engage)
+        if hotkey.start():
+            log.info("kill_switch_ready", hotkey=DEFAULT_HOTKEY_LABEL)
+
+    tray_thread: threading.Thread | None = None
+    if with_tray and settings.enable_tray and tray.available():
+        tray_thread = threading.Thread(target=tray.run, name="atlas-tray", daemon=True)
+        tray_thread.start()
+
     try:
         await transport.run(stop=stop)
     except FatalTransportError as exc:
         log.error("agent_stopped", reason=str(exc))
         return 2
+    finally:
+        if hotkey is not None:
+            hotkey.stop()
+        tray.stop()
+        if tray_thread is not None:
+            tray_thread.join(timeout=3.0)
     return 0
+
+
+# ---------------------------------------------------------------------- main
 
 
 def main() -> None:
@@ -103,8 +229,16 @@ def main() -> None:
     pair = subcommands.add_parser("pair", help="enrol this machine using a pairing code")
     pair.add_argument("--code", required=True, help="pairing code, e.g. 4F2K-9X1M")
 
-    subcommands.add_parser("status", help="show identity and backend reachability")
-    subcommands.add_parser("run", help="connect and stay connected")
+    subcommands.add_parser("status", help="show identity, mode, autostart and reachability")
+
+    run = subcommands.add_parser("run", help="connect and stay connected")
+    run.add_argument("--no-tray", action="store_true", help="run headless, without the tray icon")
+
+    safe = subcommands.add_parser("safe-mode", help="local kill switch")
+    safe.add_argument("action", choices=["on", "off", "status"])
+
+    auto = subcommands.add_parser("autostart", help="start the agent at logon")
+    auto.add_argument("action", choices=["install", "uninstall", "status"])
 
     args = parser.parse_args()
     settings = get_agent_settings()
@@ -112,15 +246,18 @@ def main() -> None:
 
     try:
         if args.command == "pair":
-            code = args.code
-            sys.exit(asyncio.run(_pair(settings, code)))
+            sys.exit(asyncio.run(_pair(settings, args.code)))
         elif args.command == "status":
             sys.exit(asyncio.run(_status(settings)))
+        elif args.command == "safe-mode":
+            sys.exit(_safe_mode(settings, args.action))
+        elif args.command == "autostart":
+            sys.exit(_autostart(args.action))
         else:
-            sys.exit(asyncio.run(_run(settings)))
+            sys.exit(asyncio.run(_run(settings, with_tray=not args.no_tray)))
     except KeyboardInterrupt:
         sys.exit(130)
-    except (BackendError, IdentityStoreError, ValueError) as exc:
+    except (BackendError, IdentityStoreError, autostart.AutostartError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 

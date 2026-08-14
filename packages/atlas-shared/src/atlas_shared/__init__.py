@@ -14,7 +14,9 @@ from atlas_shared.enums import (
     Language,
     MessageKind,
     Priority,
+    RefusalReason,
     RiskLevel,
+    ToolStatus,
     TrustLevel,
 )
 from atlas_shared.ids import is_ulid, new_ulid, ulid_timestamp
@@ -31,7 +33,9 @@ __all__ = [
     "Language",
     "MessageKind",
     "Priority",
+    "RefusalReason",
     "RiskLevel",
+    "ToolStatus",
     "TrustLevel",
     "__version__",
     "canonical_json",

@@ -23,7 +23,7 @@ from atlas_backend.audit import AuditActor, AuditEvent, append
 from atlas_backend.auth.challenge import load_active_device
 from atlas_backend.config import Settings
 from atlas_backend.db.base import utc_now
-from atlas_backend.db.models import DeviceSession
+from atlas_backend.db.models import ActivitySampleRow, DeviceSession, SystemTelemetryRow
 from atlas_backend.db.session import Database
 from atlas_backend.logging import get_logger
 from atlas_backend.protocol_codes import CloseCode
@@ -33,6 +33,7 @@ from atlas_shared.enums import DeviceKind, MessageKind
 from atlas_shared.protocol.envelope import PROTOCOL_VERSION, Envelope
 from atlas_shared.protocol.errors import AtlasProtocolError, ErrorCode
 from atlas_shared.protocol.messages import (
+    ActivityBatch,
     AgentHello,
     ClientHello,
     ConnPing,
@@ -41,8 +42,11 @@ from atlas_shared.protocol.messages import (
     HelloAck,
     ModeChanged,
     ParsedMessage,
+    SystemTelemetry,
+    ToolResult,
     build_envelope,
     parse_message,
+    require_signature,
 )
 
 router = APIRouter()
@@ -83,7 +87,7 @@ async def device_socket(websocket: WebSocket) -> None:
         # Rejected during the handshake: no socket is ever accepted.
         await websocket.close(code=CloseCode.UNAUTHORIZED)
         return
-    device_id, device_kind = identity
+    device_id, device_kind, device_public_key = identity
 
     await websocket.accept()
 
@@ -103,6 +107,7 @@ async def device_socket(websocket: WebSocket) -> None:
         device_kind=device_kind,
         session_id=session_id,
         websocket=websocket,
+        public_key=device_public_key,
     )
     await hub.register(connection)
 
@@ -152,7 +157,7 @@ async def device_socket(websocket: WebSocket) -> None:
 # ---------------------------------------------------------------- lifecycle
 
 
-async def _authenticate(websocket: WebSocket) -> tuple[uuid.UUID, str] | None:
+async def _authenticate(websocket: WebSocket) -> tuple[uuid.UUID, str, bytes] | None:
     """Validate the bearer token and confirm the device is still active."""
     tokens = websocket.app.state.token_service
     database = websocket.app.state.database
@@ -169,7 +174,7 @@ async def _authenticate(websocket: WebSocket) -> tuple[uuid.UUID, str] | None:
         async with database.transaction() as db:
             device = await load_active_device(db, claims.device_id)
             device.last_seen_at = utc_now()
-            return device.id, device.kind
+            return device.id, device.kind, device.public_key
     except AtlasProtocolError:
         return None
 
@@ -204,6 +209,8 @@ async def _handshake(
         )
 
     connection.handshake_complete = True
+    if isinstance(payload, AgentHello):
+        connection.mode = payload.mode
     connection.touch()
 
     await _send(
@@ -282,6 +289,7 @@ async def _dispatch(
     if message_type == "agent.mode.changed":
         payload = parsed.payload
         assert isinstance(payload, ModeChanged)
+        connection.mode = payload.mode
         async with database.transaction() as db:
             await append(
                 db,
@@ -290,6 +298,44 @@ async def _dispatch(
                 device_id=connection.device_id,
                 payload={"mode": payload.mode.value, "reason": payload.reason},
             )
+        return
+
+    if message_type == "agent.tool.result":
+        await _handle_tool_result(websocket, connection, parsed, database)
+        return
+
+    if message_type == "agent.telemetry":
+        payload = parsed.payload
+        assert isinstance(payload, SystemTelemetry)
+        async with database.transaction() as db:
+            db.add(
+                SystemTelemetryRow(
+                    device_id=connection.device_id,
+                    ts=utc_now(),
+                    cpu_pct=payload.cpu_pct,
+                    ram_used_pct=payload.ram_used_pct,
+                    ram_total_mb=payload.ram_total_mb,
+                    disks=[disk.model_dump(mode="json") for disk in payload.disks],
+                    uptime_s=payload.uptime_s,
+                    gpu_temp_c=payload.gpu_temp_c,
+                )
+            )
+        return
+
+    if message_type == "agent.activity.batch":
+        payload = parsed.payload
+        assert isinstance(payload, ActivityBatch)
+        async with database.transaction() as db:
+            for sample in payload.samples:
+                db.add(
+                    ActivitySampleRow(
+                        device_id=connection.device_id,
+                        ts=sample.ts,
+                        process_name=sample.process_name,
+                        is_idle=sample.is_idle,
+                        idle_seconds=sample.idle_seconds,
+                    )
+                )
         return
 
     if message_type in _EXPECTED_HELLO.values():
@@ -306,6 +352,44 @@ async def _dispatch(
         ),
         corr_id=parsed.envelope.id,
     )
+
+
+async def _handle_tool_result(
+    websocket: WebSocket,
+    connection: Connection,
+    parsed: ParsedMessage,
+    database: Database,
+) -> None:
+    """Accept a result only if the device that ran it signed it.
+
+    An unsigned or wrongly signed result is dropped, not applied: the audit
+    trail must record what the *device* reported, not what the transport
+    happened to carry.
+    """
+    try:
+        require_signature(parsed, connection.public_key)
+    except AtlasProtocolError as exc:
+        log.error(
+            "tool_result_signature_invalid",
+            device_id=str(connection.device_id),
+            error=exc.message,
+        )
+        async with database.transaction() as db:
+            await append(
+                db,
+                actor=AuditActor.DEVICE,
+                event_type=AuditEvent.TOOL_RESULT_UNVERIFIED,
+                device_id=connection.device_id,
+                payload={"corr_id": parsed.envelope.corr_id},
+            )
+        await _send_error(websocket, exc, corr_id=parsed.envelope.id)
+        return
+
+    payload = parsed.payload
+    assert isinstance(payload, ToolResult)
+    if not websocket.app.state.hub.resolve(parsed.envelope.corr_id, payload):
+        # Late or unsolicited: the dispatcher already gave up, or nobody asked.
+        log.warning("tool_result_unmatched", call_id=payload.call_id)
 
 
 # ---------------------------------------------------------------- plumbing

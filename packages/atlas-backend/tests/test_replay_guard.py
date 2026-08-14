@@ -2,11 +2,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from atlas_backend.ws.replay import ReplayGuard
 from atlas_shared.enums import MessageKind
 from atlas_shared.ids import new_ulid
 from atlas_shared.protocol.envelope import Envelope
 from atlas_shared.protocol.errors import AtlasProtocolError, ErrorCode
+from atlas_shared.replay import ReplayGuard
 
 NOW = datetime(2026, 8, 12, 12, 0, 0, tzinfo=UTC)
 

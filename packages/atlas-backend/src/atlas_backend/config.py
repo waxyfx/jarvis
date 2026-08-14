@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     #: asymmetric instead.
     jwt_secret: SecretStr
 
+    #: Ed25519 private key, base64url, 32 bytes. Signs commands sent to devices;
+    #: each device pins the matching public key at pairing time. Changing it
+    #: invalidates every pin and forces re-pairing. Generate one with the
+    #: command shown in .env.example.
+    server_signing_key: SecretStr
+
     #: Authorises the very first pairing, when no trusted device exists yet.
     #: Unset it after the Windows agent is paired.
     bootstrap_token: SecretStr | None = None
@@ -68,6 +74,22 @@ class Settings(BaseSettings):
     #: Pairing attempts allowed per client address per minute.
     pairing_rate_limit_per_minute: int = Field(default=10, ge=1, le=120)
 
+    #: Directories file tools may touch, as the *agent* sees them. Used for a
+    #: cheap pre-filter; the agent re-checks with real path resolution and has
+    #: the last word. Empty means no file tool can run — fail-safe, and the
+    #: reason an unconfigured deployment cannot touch the disk by accident.
+    allowed_file_roots: tuple[str, ...] = ()
+    #: Directories an executable may legitimately live in. Anything outside is
+    #: treated as an unknown binary and escalates to HIGH.
+    allowed_executable_roots: tuple[str, ...] = (
+        r"C:\Program Files",
+        r"C:\Program Files (x86)",
+        r"C:\Windows",
+    )
+
+    #: How long to wait for an agent to answer a dispatched command.
+    tool_dispatch_timeout_s: float = Field(default=60.0, gt=1.0, le=600.0)
+
     @field_validator("log_level")
     @classmethod
     def _normalise_log_level(cls, value: str) -> str:
@@ -75,6 +97,19 @@ class Settings(BaseSettings):
         if level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
             raise ValueError(f"invalid log level: {value}")
         return level
+
+    @field_validator("server_signing_key")
+    @classmethod
+    def _check_signing_key(cls, value: SecretStr) -> SecretStr:
+        from atlas_shared.crypto import KEY_SIZE, b64u_decode
+
+        try:
+            raw = b64u_decode(value.get_secret_value())
+        except ValueError as exc:
+            raise ValueError("server_signing_key must be base64url") from exc
+        if len(raw) != KEY_SIZE:
+            raise ValueError(f"server_signing_key must decode to {KEY_SIZE} bytes")
+        return value
 
     @field_validator("database_url")
     @classmethod

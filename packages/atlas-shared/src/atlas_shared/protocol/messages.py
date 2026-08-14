@@ -18,25 +18,42 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from atlas_shared.enums import AgentMode, DeviceKind, MessageKind
+from atlas_shared.enums import (
+    AgentMode,
+    DeviceKind,
+    MessageKind,
+    RefusalReason,
+    RiskLevel,
+    ToolStatus,
+)
 from atlas_shared.ids import new_ulid
-from atlas_shared.protocol.envelope import PROTOCOL_VERSION, Envelope
+from atlas_shared.protocol.envelope import PROTOCOL_VERSION, Envelope, verify_envelope
 from atlas_shared.protocol.errors import AtlasProtocolError, ErrorCode
 
 __all__ = [
+    "ActivityBatch",
+    "ActivitySample",
     "AgentHello",
     "ClientHello",
     "ConnPing",
     "ConnPong",
+    "DiskUsage",
+    "EnterSafeMode",
     "ErrorPayload",
     "HelloAck",
     "MessageSpec",
     "ModeChanged",
     "ParsedMessage",
+    "SystemTelemetry",
+    "ToolCancel",
+    "ToolExecute",
+    "ToolFailure",
+    "ToolResult",
     "build_envelope",
     "known_types",
     "parse_message",
     "register",
+    "require_signature",
     "spec_for",
 ]
 
@@ -166,6 +183,109 @@ class ErrorPayload(_Payload):
 
 
 # --------------------------------------------------------------------------
+# Tool execution (M2)
+#
+# Commands that can act on the machine are signed by the server, and the agent
+# verifies them against a key it pinned at pairing time. Results are signed back
+# by the device, so the audit trail records an outcome that only that device
+# could have produced.
+# --------------------------------------------------------------------------
+
+
+@register("agent.tool.execute", MessageKind.CMD, signature_required=True)
+class ToolExecute(_Payload):
+    """Run one tool. Never a shell: `tool` names a declared, typed capability."""
+
+    call_id: str
+    tool: str
+    tool_version: int
+    args: dict[str, Any] = Field(default_factory=dict)
+    #: What the server's policy assessed. The agent re-assesses independently and
+    #: refuses on any disagreement rather than trusting this value.
+    risk: RiskLevel
+    deadline_s: float = Field(gt=0, le=600)
+
+
+@register("agent.tool.cancel", MessageKind.CMD, signature_required=True)
+class ToolCancel(_Payload):
+    call_id: str
+
+
+class ToolFailure(_Payload):
+    code: str
+    message: str
+
+
+@register("agent.tool.result", MessageKind.RES, signature_required=True)
+class ToolResult(_Payload):
+    call_id: str
+    tool: str
+    status: ToolStatus
+    result: dict[str, Any] | None = None
+    failure: ToolFailure | None = None
+    #: Present when ``status`` is ``refused``.
+    refusal: RefusalReason | None = None
+    #: The risk the *agent* computed. Recorded even when it matches, so a
+    #: divergence between the two sides is visible in the audit trail.
+    risk_local: RiskLevel | None = None
+    duration_ms: int = Field(ge=0)
+
+
+@register("agent.mode.enter_safe", MessageKind.CMD, signature_required=True)
+class EnterSafeMode(_Payload):
+    """Ask the agent to enter SAFE MODE.
+
+    One-way by design. There is no message that leaves SAFE MODE: that requires
+    physical access to the machine, so a compromised backend cannot re-enable
+    the capabilities it just lost.
+    """
+
+    reason: str
+
+
+# --------------------------------------------------------------------------
+# Telemetry and activity (M2)
+# --------------------------------------------------------------------------
+
+
+class DiskUsage(_Payload):
+    mount: str
+    total_gb: float
+    free_gb: float
+    used_pct: float
+
+
+@register("agent.telemetry", MessageKind.EVT)
+class SystemTelemetry(_Payload):
+    cpu_pct: float
+    ram_used_pct: float
+    ram_total_mb: int
+    disks: tuple[DiskUsage, ...] = ()
+    uptime_s: int
+    #: Absent when no supported sensor is available; see PHASE-0 §2.
+    gpu_temp_c: float | None = None
+
+
+class ActivitySample(_Payload):
+    """One observation of what the machine is being used for.
+
+    Metadata only: the foreground process and whether the user is idle. Window
+    titles, keystrokes and clipboard contents are deliberately not collected —
+    see docs/security.md.
+    """
+
+    ts: datetime
+    process_name: str
+    is_idle: bool
+    idle_seconds: int = Field(ge=0)
+
+
+@register("agent.activity.batch", MessageKind.EVT)
+class ActivityBatch(_Payload):
+    samples: tuple[ActivitySample, ...]
+
+
+# --------------------------------------------------------------------------
 # Parsing and construction
 # --------------------------------------------------------------------------
 
@@ -232,6 +352,27 @@ def parse_message(raw: str | bytes) -> ParsedMessage:
         ) from exc
 
     return ParsedMessage(envelope=envelope, payload=payload, spec=spec)
+
+
+def require_signature(parsed: ParsedMessage, public_key: bytes) -> None:
+    """Enforce the signature a message type declares it needs.
+
+    Called by the receiver of any message that can cause an effect. Types that
+    do not declare ``signature_required`` pass through untouched, so this can be
+    applied uniformly to every inbound message.
+
+    Raises:
+        AtlasProtocolError: ``SIGNATURE_INVALID`` when a required signature is
+            missing or does not verify against ``public_key``.
+    """
+    if not parsed.spec.signature_required:
+        return
+    if not verify_envelope(parsed.envelope, public_key):
+        raise AtlasProtocolError(
+            ErrorCode.SIGNATURE_INVALID,
+            f"{parsed.envelope.type} requires a valid signature",
+            {"type": parsed.envelope.type},
+        )
 
 
 def build_envelope(

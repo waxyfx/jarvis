@@ -60,7 +60,14 @@ class BackendClient:
         if response.status_code != 201:
             raise EnrolmentRefusedError(_describe(response))
 
-        return identity.with_device_id(str(response.json()["device_id"]))
+        body = response.json()
+        pinned = body.get("server_public_key")
+        if not pinned:
+            raise EnrolmentRefusedError(
+                "the backend did not return a server public key; it is running a "
+                "version older than M2 and its commands could not be verified"
+            )
+        return identity.enrolled_as(str(body["device_id"]), b64u_decode(pinned))
 
     async def authenticate(self, identity: DeviceIdentity) -> str:
         """Complete challenge/response and return a bearer token."""

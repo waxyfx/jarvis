@@ -2,18 +2,30 @@ import pytest
 from pydantic import ValidationError
 
 from atlas_backend.config import Settings
+from atlas_shared.crypto import b64u_encode
 
 VALID_DSN = "postgresql+asyncpg://user:pass@localhost:5432/atlas"
 LONG_SECRET = "x" * 48
+VALID_SIGNING_KEY = b64u_encode(bytes(range(32)))
 
 
 def build(**overrides: object) -> Settings:
     base: dict[str, object] = {
         "database_url": VALID_DSN,
         "jwt_secret": LONG_SECRET,
+        "server_signing_key": VALID_SIGNING_KEY,
         "environment": "dev",
     }
     return Settings(**(base | overrides))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "bad_key",
+    ["", "not base64!!!", b64u_encode(b"\x00" * 31), b64u_encode(b"\x00" * 33)],
+)
+def test_malformed_signing_key_is_rejected(bad_key: str) -> None:
+    with pytest.raises(ValidationError, match="server_signing_key"):
+        build(server_signing_key=bad_key)
 
 
 def test_defaults_are_applied() -> None:

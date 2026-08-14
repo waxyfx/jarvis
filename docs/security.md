@@ -1,12 +1,16 @@
-# Security model — as implemented in M1
+# Security model — as implemented in M1 and M2
 
 This is a review of what exists today, not of the design target. Controls that
 land in later phases are listed as gaps, not as features.
 
-Scope of M1: device identity, enrolment, authentication, the audit trail, and
-the realtime transport. **No tool execution, no AI model, no microphone, no
-screen access exists yet** — so the largest attack surface of the finished
-system is not present, and neither are its defences.
+**M1** delivered device identity, enrolment, authentication, the audit trail and
+the realtime transport. **M2** added the part that can actually touch the
+machine: signed commands, a deterministic Policy Engine, a path guard, SAFE
+MODE, six typed tools, and metadata-only activity monitoring.
+
+Still absent, and therefore still outside this review: **no AI model, no
+microphone, no screen capture, no remote input.** Those arrive in M3, M4 and M6
+with their own controls.
 
 ## Trust boundaries
 
@@ -124,6 +128,112 @@ or transcript bodies. The log is readable from the iPhone Settings screen.
   uniqueness (see [protocol.md](protocol.md)).
 * Rate limits on pairing and authentication endpoints.
 
+## Commands (M2)
+
+A bearer token proves *the backend* is talking. It does not prove *which*
+backend. So every command that can act on the machine is signed with the
+server's Ed25519 key, and the agent verifies it against a key it **pinned at
+pairing time**. An attacker holding a stolen token, directing the agent from
+their own server, gets nothing: the signature will not verify.
+
+* The server's private key lives in the environment, never in the database —
+  same reasoning as the agent's key in DPAPI. A database dump does not yield the
+  ability to sign commands.
+* Rotating the key invalidates every pin and forces re-pairing. That is
+  deliberate: a key that can be swapped quietly is a key an attacker can swap
+  quietly.
+* Results are signed back **by the device**, so the audit trail records an
+  outcome only that machine could have produced. A result whose signature does
+  not verify is dropped and recorded as `tool.result_unverified`.
+* A command whose signature fails puts the agent into SAFE MODE. It is either a
+  bug or an attack; both mean stop accepting instructions.
+* Replay protection runs on the agent, not only the server: a repeated message
+  id is refused, and so is a timestamp outside the freshness window. The cache
+  belongs to the agent rather than to a connection, so reconnecting is not a
+  fresh start for an attacker.
+
+## Two independent policy checks (M2)
+
+The Policy Engine on the server is a **pure function** — no I/O, no clock of its
+own, no model. From M3 a language model will propose tool calls *into* it; it
+does not consult the model, cannot be persuaded by it, and does not read its
+reasoning.
+
+The agent then does the whole assessment again, from the same manifests, and
+**refuses on any disagreement**. A command that arrives claiming to be LOW when
+this machine computes HIGH is not executed at the lower bar — it is not executed
+at all, and the divergence is logged and stored.
+
+This matters because the two sides are not equivalent: the server matches path
+strings a model may have produced; only the agent can resolve what a path really
+points at. And the server can be wrong, or compromised.
+
+Ordering inside the engine is fixed, and the verdict can only get stricter as
+rules are evaluated:
+
+1. risk from the manifest — an unevaluable rule is a broken guard, so it denies;
+2. DENY is terminal, with no confirmation path;
+3. a non-trusted device may read, never act;
+4. an explicit user denial outranks everything below it;
+5. SAFE MODE blocks anything above LOW;
+6. HIGH always requires confirmation — **no standing rule can pre-authorise it**;
+7. a user may always ask for *more* friction than the default.
+
+## SAFE MODE and the kill switch (M2)
+
+The rule the design exists to enforce: **SAFE MODE can be entered from anywhere,
+and left only from this machine.**
+
+* The protocol has `agent.mode.enter_safe` and **no message that leaves it**.
+  The wire cannot express the dangerous direction.
+* `SafeModeController.leave_safe_mode()` raises for any non-local source. Tray,
+  hotkey and CLI are local; the backend and the agent's own fail-safes are not.
+* State is persisted, so a restart does not quietly clear it. An agent stopped
+  for a reason stays stopped.
+* An unreadable state file means SAFE MODE, not "normal". Failing safe is the
+  only defensible reading of "I do not know what state I am in".
+* The tray and the global hotkey (`Ctrl+Alt+Shift+A`) call the controller
+  directly, which writes a local file. **No network, no backend, no token** — so
+  the kill switch works when the connection is down and when the backend is
+  hostile.
+* A missing tray icon is never the reason a kill switch is missing: if the GUI
+  libraries are unavailable the agent runs headless and the hotkey and
+  `atlas-agent safe-mode on` still work.
+
+## Autostart (M2)
+
+A per-user `Run` entry under `HKEY_CURRENT_USER`, installed and removed without
+elevation.
+
+A scheduled task was tried first and rejected **on evidence**: every
+`schtasks /SC ONLOGON` variant — with and without `/RU`, at `/RL LIMITED` — is
+refused with *Access is denied* for a non-elevated caller on Windows 11. Logon
+triggers are an administrative operation.
+
+The consequence is a security property, not a compromise: the agent inherits the
+user's ordinary limited token, so it **cannot inject input into elevated windows
+or reach the UAC desktop**. `HKEY_LOCAL_MACHINE` is never touched.
+
+## Activity monitoring (M2)
+
+Collected: the foreground process name, whether the user is idle, how long, and
+system counters.
+
+Not collected, and with no code path to collect: window titles, keystrokes,
+clipboard contents, screen contents. The only call made against a window is
+`GetWindowThreadProcessId`, which returns a process id and nothing else;
+`GetWindowText` is never called.
+
+Two mechanisms keep it that way rather than one:
+
+* the database schema has no column that could hold any of it, so widening
+  collection would require a visible migration;
+* a test greps the collector's source for `GetWindowText`, `GetClipboardData`,
+  `SetWindowsHookEx`, `GetAsyncKeyState`, `keybd_event` and `BitBlt`, and fails
+  if any appears.
+
+Sampling is pausable from the tray, and pausing drops what is already buffered.
+
 ## Error hygiene
 
 Authentication and pairing failures return one indistinguishable answer. Unknown
@@ -162,6 +272,21 @@ Not "there is a test file", but which properties are pinned:
 | Replayed message ids and stale timestamps close the connection | `test_websocket.py` |
 | A Windows agent cannot present itself as a phone | `test_websocket.py` |
 | The agent stops — and says why — when revoked | `test_end_to_end.py` |
+| **M2** — HIGH risk cannot be pre-authorised by a standing rule | `test_policy_engine.py` |
+| An override cannot bypass SAFE MODE or promote a limited device | `test_policy_engine.py` |
+| A junction pointing out of the roots is refused (real junction created) | `test_path_guard.py` |
+| ATLAS cannot read its own identity file or any `.env` | `test_path_guard.py` |
+| SAFE MODE cannot be left from a remote or automatic source | `test_safe_mode.py` |
+| A corrupt mode-state file fails into SAFE MODE | `test_safe_mode.py` |
+| The agent refuses a command whose risk it assesses higher than the server did | `test_runner.py` |
+| A declared-but-unbound tool reports `not_implemented`, never success | `test_runner.py` |
+| The collector's source contains no window-text, keyboard or clipboard API | `test_monitor.py` |
+| Autostart installs and removes without elevation (real registry) | `test_autostart.py` |
+| A replayed signed command runs once, even across a reconnect | `test_m2_resilience.py` |
+| A stale or future-dated command is refused | `test_m2_resilience.py` |
+| A forged command is refused **and** drives the agent into SAFE MODE | `test_m2_resilience.py` |
+| The backend can engage SAFE MODE but cannot release it | `test_m2_resilience.py` |
+| A result signed by a foreign key is refused and audited | `test_websocket.py` |
 
 ## Known gaps
 
@@ -169,7 +294,9 @@ Honest list of what is *not* protected yet.
 
 | Gap | Status |
 |---|---|
-| Commands to the agent are not yet signed end-to-end | The envelope signature scheme exists and is tested; nothing sends signed commands because no commands exist yet. Wired up in M2 |
+| Confirmation is an API call, not a biometric | `POST /v1/tools/calls/{id}/confirm` accepts any trusted device. The Face ID gate and the ≤2-minute freshness requirement arrive with the iPhone app in M5 |
+| The dispatcher holds a pending call in memory | A backend restart loses in-flight calls. They are recorded as dispatched and never completed, which is visible but not automatically resolved |
+| No rate limit on tool execution | Per-tool `rate_limit_per_minute` is declared in the manifests and not yet enforced |
 | Rate limiting is per-process, in memory | Correct for one backend process. Must move to the database if a second process is ever added |
 | No key rotation procedure for device keys | Recovery today is re-pairing with a new key. A rotation flow is M12 |
 | No intrusion detection or alerting on audit anomalies | `POST /v1/audit/verify` exists and must be run manually; automated checking is M12 |
@@ -177,11 +304,15 @@ Honest list of what is *not* protected yet.
 | The Docker deployment is unverified | Written, never built — Docker is not installed on the development machine. First build is part of VPS acceptance |
 | No security review by a third party | Self-review only |
 
-## Not in scope for M1
+## Not in scope yet
 
-Everything the Vision Policy and permission model cover — SAFE MODE enforcement,
-risk-based confirmation, path guards at execution time, screenshot redaction —
-is *declared* in `atlas-shared` and *documented* in
-[VISION-POLICY.md](VISION-POLICY.md), but nothing enforces it yet because
-nothing executes yet. The manifests and risk machinery exist so that M2 and M3
-bind to a contract that was designed before the code that uses it.
+The Vision Policy's cloud-vision rules ([VISION-POLICY.md](VISION-POLICY.md) §2)
+are documented and their interfaces are declared, but nothing enforces them
+because nothing captures the screen yet. `VisionProvider`, screenshot redaction
+and the T1–T5 resolution chain land in M3.
+
+SAFE MODE's vision clause is already true by construction: with no capture code,
+there is nothing to disable. It becomes an enforced rule when M3 adds one.
+
+Voice, speaker verification, remote input and screen streaming are M4 and M6,
+each with the controls described in PHASE-0 §10 and §14.

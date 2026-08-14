@@ -13,6 +13,9 @@ from atlas_shared.crypto import b64u_encode, generate_keypair, public_key_for
 
 on_windows = pytest.mark.skipif(sys.platform != "win32", reason="DPAPI is Windows-only")
 
+#: Stand-in for the backend's public key, pinned at enrolment.
+SERVER_KEY = bytes(range(32))
+
 
 @pytest.fixture
 def store(tmp_path: Path) -> IdentityStore:
@@ -32,7 +35,7 @@ class TestRoundTrip:
         assert identity.is_enrolled is False
 
     def test_save_and_load(self, store: IdentityStore) -> None:
-        identity = store.create().with_device_id("11111111-1111-1111-1111-111111111111")
+        identity = store.create().enrolled_as("11111111-1111-1111-1111-111111111111", SERVER_KEY)
         store.save(identity)
 
         loaded = store.load()
@@ -40,11 +43,13 @@ class TestRoundTrip:
         assert loaded.private_key == identity.private_key
         assert loaded.public_key == identity.public_key
         assert loaded.device_id == identity.device_id
+        assert loaded.server_public_key == SERVER_KEY
         assert loaded.is_enrolled is True
+        assert loaded.can_accept_commands is True
 
     def test_saving_twice_replaces_atomically(self, store: IdentityStore) -> None:
-        store.save(store.create().with_device_id("a"))
-        second = store.create().with_device_id("b")
+        store.save(store.create().enrolled_as("a", SERVER_KEY))
+        second = store.create().enrolled_as("b", SERVER_KEY)
         store.save(second)
 
         loaded = store.load()
@@ -148,7 +153,7 @@ class TestWindowsProtection:
 
     def test_dpapi_round_trip(self, tmp_path: Path) -> None:
         store = IdentityStore(tmp_path / "identity.json", allow_plaintext=False)
-        identity = store.create().with_device_id("device-1")
+        identity = store.create().enrolled_as("device-1", SERVER_KEY)
         store.save(identity)
 
         loaded = store.load()
@@ -156,8 +161,39 @@ class TestWindowsProtection:
         assert loaded.private_key == identity.private_key
 
 
-def test_with_device_id_does_not_mutate() -> None:
+class TestServerKeyPinning:
+    def test_a_fresh_identity_cannot_accept_commands(self, store: IdentityStore) -> None:
+        assert store.create().can_accept_commands is False
+
+    def test_pinned_key_of_wrong_length_is_rejected(self, store: IdentityStore) -> None:
+        store.save(store.create().enrolled_as("d", SERVER_KEY))
+        document = json.loads(store.path.read_text(encoding="utf-8"))
+        document["server_public_key"] = b64u_encode(b"\x00" * 31)
+        store.path.write_text(json.dumps(document), encoding="utf-8")
+
+        with pytest.raises(IdentityStoreError, match="pinned server key"):
+            store.load()
+
+    def test_version_1_file_loads_but_cannot_accept_commands(self, store: IdentityStore) -> None:
+        # An identity written before pinning existed stays usable for connecting,
+        # but must not be trusted to verify a command. The agent tells the
+        # operator to re-pair rather than silently accepting anything.
+        store.save(store.create().enrolled_as("legacy-device", SERVER_KEY))
+        document = json.loads(store.path.read_text(encoding="utf-8"))
+        document["version"] = 1
+        del document["server_public_key"]
+        store.path.write_text(json.dumps(document), encoding="utf-8")
+
+        loaded = store.load()
+        assert loaded is not None
+        assert loaded.is_enrolled is True
+        assert loaded.can_accept_commands is False
+
+
+def test_enrolled_as_does_not_mutate() -> None:
     identity = DeviceIdentity(private_key=b"\x01" * 32, public_key=b"\x02" * 32)
-    updated = identity.with_device_id("abc")
+    updated = identity.enrolled_as("abc", SERVER_KEY)
     assert identity.device_id is None
+    assert identity.server_public_key is None
     assert updated.device_id == "abc"
+    assert updated.server_public_key == SERVER_KEY

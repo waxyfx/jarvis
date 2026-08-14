@@ -23,7 +23,10 @@ from atlas_shared.crypto import KEY_SIZE, b64u_decode, b64u_encode, generate_key
 
 __all__ = ["DeviceIdentity", "IdentityStore", "IdentityStoreError"]
 
-_FORMAT_VERSION = 1
+#: 1 — M1: device key only.
+#: 2 — M2: adds the pinned server public key.
+_FORMAT_VERSION = 2
+_SUPPORTED_VERSIONS = frozenset({1, 2})
 _DPAPI_DESCRIPTION = "ATLAS agent device key"
 
 #: Held as a plain bool so that both branches stay reachable to a type checker
@@ -41,15 +44,29 @@ class DeviceIdentity:
     public_key: bytes
     #: Assigned by the backend at enrolment; absent until then.
     device_id: str | None = None
+    #: The backend's public key, pinned during enrolment. Commands must verify
+    #: against exactly this key — a different backend, even one holding a valid
+    #: token, cannot direct this machine. ``None`` for identities written by M1,
+    #: before pinning existed; such an agent must re-pair before it will accept
+    #: any command.
+    server_public_key: bytes | None = None
 
-    def with_device_id(self, device_id: str) -> DeviceIdentity:
+    def enrolled_as(self, device_id: str, server_public_key: bytes) -> DeviceIdentity:
         return DeviceIdentity(
-            private_key=self.private_key, public_key=self.public_key, device_id=device_id
+            private_key=self.private_key,
+            public_key=self.public_key,
+            device_id=device_id,
+            server_public_key=server_public_key,
         )
 
     @property
     def is_enrolled(self) -> bool:
         return self.device_id is not None
+
+    @property
+    def can_accept_commands(self) -> bool:
+        """Whether a pinned server key exists to verify commands against."""
+        return self.is_enrolled and self.server_public_key is not None
 
 
 class IdentityStore:
@@ -79,7 +96,7 @@ class IdentityStore:
             raise IdentityStoreError(f"identity file is unreadable: {exc}") from exc
 
         version = document.get("version")
-        if version != _FORMAT_VERSION:
+        if version not in _SUPPORTED_VERSIONS:
             raise IdentityStoreError(f"unsupported identity file version: {version!r}")
 
         protection = document.get("protection")
@@ -107,10 +124,16 @@ class IdentityStore:
             # the only safe reading.
             raise IdentityStoreError("stored public key does not match the private key")
 
+        pinned = document.get("server_public_key")
+        server_public_key = b64u_decode(pinned) if pinned else None
+        if server_public_key is not None and len(server_public_key) != KEY_SIZE:
+            raise IdentityStoreError("pinned server key has the wrong length")
+
         return DeviceIdentity(
             private_key=private_key,
             public_key=public_key,
             device_id=document.get("device_id"),
+            server_public_key=server_public_key,
         )
 
     def save(self, identity: DeviceIdentity) -> None:
@@ -121,6 +144,9 @@ class IdentityStore:
             "device_id": identity.device_id,
             "public_key": b64u_encode(identity.public_key),
             "private_key": b64u_encode(blob),
+            "server_public_key": (
+                b64u_encode(identity.server_public_key) if identity.server_public_key else None
+            ),
         }
 
         self._path.parent.mkdir(parents=True, exist_ok=True)

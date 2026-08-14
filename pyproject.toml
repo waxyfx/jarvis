@@ -82,7 +82,18 @@ files = [
 ]
 
 [[tool.mypy.overrides]]
-module = ["win32crypt.*", "win32api.*", "pywintypes.*"]
+# Windows and system libraries that ship no type information.
+module = [
+    "win32crypt.*",
+    "win32api.*",
+    "win32con.*",
+    "win32gui.*",
+    "win32process.*",
+    "pywintypes.*",
+    "psutil.*",
+    "pystray.*",
+    "PIL.*",
+]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------- pytest

@@ -71,6 +71,18 @@ class AuditEvent(StrEnum):
     PROTOCOL_VIOLATION = "connection.protocol_violation"
     AGENT_MODE_CHANGED = "agent.mode_changed"
 
+    # Tool execution (M2). Every outcome is recorded, including the ones where
+    # nothing ran.
+    TOOL_DENIED = "tool.denied"
+    TOOL_CONFIRMATION_REQUIRED = "tool.confirmation_required"
+    TOOL_CONFIRMED = "tool.confirmed"
+    TOOL_DISPATCHED = "tool.dispatched"
+    TOOL_EXECUTED = "tool.executed"
+    TOOL_REFUSED = "tool.refused_by_agent"
+    TOOL_FAILED = "tool.failed"
+    #: A result arrived whose signature did not verify against the device key.
+    TOOL_RESULT_UNVERIFIED = "tool.result_unverified"
+
 
 def compute_entry_hash(
     *,
