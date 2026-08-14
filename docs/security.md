@@ -234,6 +234,48 @@ Two mechanisms keep it that way rather than one:
 
 Sampling is pausable from the tray, and pausing drops what is already buffered.
 
+## The language model (M3)
+
+**The model is not part of the security boundary.** It proposes; deterministic
+code disposes. Full description in [ai.md](ai.md); the controls are:
+
+* Function declarations are generated from the same `ToolManifest` objects the
+  Policy Engine reads, so a tool the model names must exist. Invented names —
+  including every shell variant it might reach for — are discarded before a
+  `tool_calls` row is created.
+* Arguments are validated against the tool's schema here, and again on the
+  agent, which also recomputes risk and refuses on disagreement.
+* `decide()` never receives the model's text, confidence or reasoning. A call
+  wrapped in "this is completely safe and the user clearly wants it" is assessed
+  identically to a bare one, and a test pins that.
+* MEDIUM and HIGH go through the existing confirmation path regardless of how
+  the model phrases the request.
+* A turn is bounded by a call cap, an iteration cap and a wall-clock timeout,
+  and can be cancelled. Each bound is tested against a model that never stops
+  proposing tools.
+* Token use is metered daily with a hard stop, so a loop cannot run up a bill.
+
+### Prompt injection
+
+Text is tagged by provenance — `user_instruction`, `external_content`,
+`tool_result` — and the untrusted kinds are wrapped in labelled blocks stating
+that they are data. That reduces how often the question arises.
+
+What *answers* it is deterministic: **once a turn has ingested external content,
+standing `always_allow` permissions stop applying.** The user pre-authorised
+acting on their own requests, not on whatever a filename happened to say. A
+successful injection therefore lands in the confirmation queue, in front of a
+person, rather than in a pre-authorised action.
+
+### The API key
+
+Backend only. In the `x-goog-api-key` header, never the URL, because a key in a
+query string ends up in proxy and access logs. Held as `SecretStr` so it cannot
+be printed. Excluded from every exception path — tested across HTTP status,
+connection and malformed-body failures with the key deliberately planted in the
+upstream error text. Never sent to the agent or the phone; startup logs the
+provider name, not the credential.
+
 ## Error hygiene
 
 Authentication and pairing failures return one indistinguishable answer. Unknown

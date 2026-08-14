@@ -75,6 +75,11 @@ class PolicyRequest:
     agent_mode: AgentMode
     now: datetime
     overrides: tuple[PermissionOverride, ...] = field(default_factory=tuple)
+    #: True once this turn has ingested text ATLAS did not get from the user —
+    #: a filename, a document, a window. Standing "always allow" permissions
+    #: stop applying, because the user pre-authorised acting on *their* request,
+    #: not on whatever a file happened to say.
+    external_content_present: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,7 +148,18 @@ def decide(request: PolicyRequest) -> PolicyDecision:
         decision = Decision.CONFIRM
         reasons.append("high risk always requires explicit confirmation")
     elif risk is RiskLevel.MEDIUM:
-        if any(override.mode is OverrideMode.ALWAYS_ALLOW for override in active_overrides):
+        pre_authorised = any(
+            override.mode is OverrideMode.ALWAYS_ALLOW for override in active_overrides
+        )
+        if pre_authorised and request.external_content_present:
+            # The user pre-authorised acting on their own requests. Content read
+            # off the disk is not their request, so the standing permission does
+            # not extend to it.
+            decision = Decision.CONFIRM
+            reasons.append(
+                "standing permission suspended: this turn involves content read from the computer"
+            )
+        elif pre_authorised:
             decision = Decision.ALLOW
             reasons.append("pre-authorised by a user permission rule")
         else:

@@ -39,6 +39,13 @@ requires_db = pytest.mark.skipif(
 )
 
 _MANAGED_TABLES = (
+    "messages",
+    "conversations",
+    "api_usage",
+    "tool_calls",
+    "permissions",
+    "activity_samples",
+    "system_telemetry",
     "audit_log",
     "device_sessions",
     "auth_challenges",
@@ -60,6 +67,9 @@ def _make_settings():  # type: ignore[no-untyped-def]
         bootstrap_token=TEST_BOOTSTRAP_TOKEN,  # type: ignore[arg-type]
         owner_display_name="Test Owner",
         database_use_null_pool=True,
+        # The server's path check is textual, so this root need not exist. The
+        # agent resolves paths for real and has the last word.
+        allowed_file_roots=("C:/atlas-test-root",),
         heartbeat_interval_s=2.0,
         hello_timeout_s=2.0,
         pairing_rate_limit_per_minute=100,

@@ -90,6 +90,27 @@ class Settings(BaseSettings):
     #: How long to wait for an agent to answer a dispatched command.
     tool_dispatch_timeout_s: float = Field(default=60.0, gt=1.0, le=600.0)
 
+    # ------------------------------------------------------------------ AI
+    #: Gemini credentials. **Backend only** — never sent to the agent or the
+    #: phone, never logged, never returned by any endpoint. Absent means the
+    #: assistant endpoint reports that no model is configured, rather than
+    #: pretending to work.
+    gemini_api_key: SecretStr | None = None
+    #: Verify against the current model list before deploying; ids change.
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    ai_request_timeout_s: float = Field(default=30.0, gt=1.0, le=300.0)
+
+    #: Runaway-loop guards. A single user message may cause at most this many
+    #: tool calls, across at most this many round trips to the model, within
+    #: this much wall-clock time.
+    ai_max_tool_calls_per_turn: int = Field(default=5, ge=1, le=20)
+    ai_max_iterations: int = Field(default=3, ge=1, le=10)
+    ai_turn_timeout_s: float = Field(default=90.0, gt=5.0, le=600.0)
+
+    #: Hard daily stop, so a loop or a bad prompt cannot run up a bill unnoticed.
+    ai_daily_token_budget: int = Field(default=2_000_000, ge=1000)
+
     @field_validator("log_level")
     @classmethod
     def _normalise_log_level(cls, value: str) -> str:

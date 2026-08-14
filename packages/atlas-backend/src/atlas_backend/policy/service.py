@@ -80,6 +80,8 @@ class ToolDispatcher:
         requester: Device | None,
         tool_name: str,
         args: Mapping[str, Any],
+        external_content_present: bool = False,
+        message_id: uuid.UUID | None = None,
     ) -> DispatchOutcome:
         if not CATALOG.has(tool_name):
             raise AtlasProtocolError(
@@ -111,6 +113,7 @@ class ToolDispatcher:
                 agent_mode=agent_mode,
                 now=utc_now(),
                 overrides=overrides,
+                external_content_present=external_content_present,
             )
         )
 
@@ -125,6 +128,7 @@ class ToolDispatcher:
             decision=verdict.decision.value,
             policy_reasons=list(verdict.reasons),
             status=CallStatus.DENIED,
+            message_id=message_id,
         )
         session.add(call)
         await session.flush()

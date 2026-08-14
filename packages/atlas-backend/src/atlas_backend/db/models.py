@@ -7,7 +7,7 @@ Nothing here is speculative — every column is written or read by M1 code.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -15,6 +15,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -22,6 +23,7 @@ from sqlalchemy import (
     Integer,
     LargeBinary,
     String,
+    Text,
     Uuid,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -32,10 +34,13 @@ from atlas_shared.enums import DeviceKind, TrustLevel
 
 __all__ = [
     "ActivitySampleRow",
+    "ApiUsageRow",
     "AuditLog",
     "AuthChallenge",
+    "Conversation",
     "Device",
     "DeviceSession",
+    "Message",
     "PairingCode",
     "PermissionOverrideRow",
     "SystemTelemetryRow",
@@ -182,6 +187,8 @@ class ToolCall(Base):
     policy_reasons: Mapped[list[str]] = mapped_column(JSONB, default=list)
 
     status: Mapped[str] = mapped_column(String(24))
+    #: The assistant turn that produced this call, when a model was involved.
+    message_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, default=None)
     confirmed_by_device_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, default=None)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
@@ -220,6 +227,59 @@ class PermissionOverrideRow(Base):
     scope: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class Conversation(Base):
+    """A run of assistant turns. One open conversation per device at a time."""
+
+    __tablename__ = "conversations"
+    __table_args__ = (Index("ix_conversations_user_id_started_at", "user_id", "started_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    origin_device_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, default=None)
+    language: Mapped[str] = mapped_column(String(8), default="ru")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+class Message(Base):
+    """One side of one exchange.
+
+    ``expires_at`` exists so transcripts can be aged out on a retention policy;
+    nothing prunes them yet (M10).
+    """
+
+    __tablename__ = "messages"
+    __table_args__ = (
+        Index("ix_messages_conversation_id_created_at", "conversation_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE")
+    )
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text)
+    language: Mapped[str | None] = mapped_column(String(8), default=None)
+    input_modality: Mapped[str] = mapped_column(String(16), default="text")
+    llm_model: Mapped[str | None] = mapped_column(String(64), default=None)
+    token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    stopped_because: Mapped[str | None] = mapped_column(String(32), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+class ApiUsageRow(Base):
+    """Daily token accounting, so a runaway loop cannot run up a bill unseen."""
+
+    __tablename__ = "api_usage"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), primary_key=True)
+    input_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    output_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    calls: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class ActivitySampleRow(Base):

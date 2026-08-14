@@ -93,7 +93,10 @@ CATALOG.register(
 
 
 class AppListArgs(_Args):
-    include_store_apps: bool = False
+    include_store_apps: bool = Field(
+        default=False,
+        description="Also list installed applications, not only running processes.",
+    )
 
 
 CATALOG.register(
@@ -112,11 +115,26 @@ CATALOG.register(
 
 
 class AppLaunchArgs(_Args):
-    name: str = Field(min_length=1, max_length=200)
-    arguments: tuple[str, ...] = ()
+    name: str = Field(
+        min_length=1,
+        max_length=200,
+        description=(
+            "The application as a person would name it: 'chrome', 'vs code', "
+            "'notepad'. Do not pass a file path here."
+        ),
+    )
+    arguments: tuple[str, ...] = Field(
+        default=(), description="Command-line arguments, if the user asked for any."
+    )
     #: Set only when the caller resolved a concrete binary. An explicit path
     #: outside the known install roots is treated as an unknown executable.
-    executable_path: str | None = None
+    executable_path: str | None = Field(
+        default=None,
+        description=(
+            "Full path to an executable. Only set this if the user gave an exact "
+            "path; otherwise leave it out and use 'name'."
+        ),
+    )
 
 
 CATALOG.register(
@@ -150,10 +168,18 @@ CATALOG.register(
 
 
 class AppCloseArgs(_Args):
-    name: str | None = None
-    pid: int | None = Field(default=None, ge=1)
+    name: str | None = Field(
+        default=None, description="Application name, e.g. 'notepad'. Either this or pid."
+    )
+    pid: int | None = Field(default=None, ge=1, description="Process id, when the user gave one.")
     #: Terminate rather than requesting a graceful close — unsaved work is lost.
-    force: bool = False
+    force: bool = Field(
+        default=False,
+        description=(
+            "Terminate the process instead of asking it to close. Destroys unsaved "
+            "work. Only set this if the user explicitly asked to force it."
+        ),
+    )
 
 
 CATALOG.register(
@@ -185,9 +211,22 @@ CATALOG.register(
 
 
 class FsSearchArgs(_Args):
-    query: str = Field(min_length=1, max_length=300)
-    root: str = Field(min_length=1)
-    max_results: int = Field(default=50, ge=1, le=1000)
+    query: str = Field(
+        min_length=1,
+        max_length=300,
+        description=(
+            "Filename or fragment to look for. Wildcards * and ? are allowed; "
+            "without them the query is matched anywhere in the name."
+        ),
+    )
+    root: str = Field(
+        min_length=1,
+        description=(
+            "Absolute directory to search under. It must be one of the user's "
+            "allowed folders; if the user did not say where to look, ask."
+        ),
+    )
+    max_results: int = Field(default=50, ge=1, le=1000, description="Cap on results.")
 
 
 CATALOG.register(
@@ -213,7 +252,10 @@ CATALOG.register(
 
 
 class FsOpenArgs(_Args):
-    path: str = Field(min_length=1)
+    path: str = Field(
+        min_length=1,
+        description="Absolute path to the file, inside one of the allowed folders.",
+    )
 
 
 CATALOG.register(

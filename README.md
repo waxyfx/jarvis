@@ -3,12 +3,12 @@
 A personal AI assistant distributed across a Windows PC, an iPhone and a small
 always-on backend.
 
-**Current state: M2 complete — the agent can act on this machine, under a
-deterministic permission model.** Six typed Windows tools, signed commands, a
-Policy Engine, a path guard, a local kill switch and metadata-only activity
-monitoring.
+**Current state: M3 complete — ATLAS understands natural language and acts on
+it, under a deterministic permission model.** Say "открой Notepad" and it opens;
+say "закрой Notepad" and it asks you to confirm first.
 
-No AI model is called and no microphone is opened yet: that is M3 and M4. See
+The model proposes; the Policy Engine and the agent decide. No microphone yet —
+that is M4, which closes the MVP. See
 [docs/PHASE-0.1-DECISIONS.md](docs/PHASE-0.1-DECISIONS.md) for the roadmap.
 
 ## Documentation
@@ -20,10 +20,12 @@ No AI model is called and no microphone is opened yet: that is M3 and M4. See
 | [VISION-POLICY.md](docs/VISION-POLICY.md) | When a screenshot may leave the machine, and SAFE MODE |
 | [protocol.md](docs/protocol.md) | Wire protocol: envelopes, signatures, close codes |
 | [tools.md](docs/tools.md) | Every Windows capability, its risk class and its guard |
+| [ai.md](docs/ai.md) | How the model is wired in, and why it cannot decide anything |
 | [security.md](docs/security.md) | Threat model and the controls that answer it |
 | [runbook.md](docs/runbook.md) | Deploying, operating, the kill switch, recovering |
 | [M1-REPORT.md](docs/M1-REPORT.md) | What M1 delivered, with test and review results |
 | [M2-REPORT.md](docs/M2-REPORT.md) | What M2 delivered, including the failure-mode review |
+| [M3-REPORT.md](docs/M3-REPORT.md) | What M3 delivered, including the adversarial matrix |
 
 ## Layout
 

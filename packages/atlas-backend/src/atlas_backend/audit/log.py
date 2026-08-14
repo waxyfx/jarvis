@@ -83,6 +83,15 @@ class AuditEvent(StrEnum):
     #: A result arrived whose signature did not verify against the device key.
     TOOL_RESULT_UNVERIFIED = "tool.result_unverified"
 
+    # Assistant turns (M3). The model proposes; these record what it proposed
+    # and what the deterministic layers did about it.
+    ASSISTANT_TURN_STARTED = "assistant.turn_started"
+    ASSISTANT_TURN_COMPLETED = "assistant.turn_completed"
+    MODEL_PROPOSED_TOOL = "assistant.model_proposed_tool"
+    #: The proposal never reached the Policy Engine: unknown tool, bad arguments.
+    MODEL_PROPOSAL_REJECTED = "assistant.model_proposal_rejected"
+    AI_BUDGET_EXHAUSTED = "assistant.budget_exhausted"
+
 
 def compute_entry_hash(
     *,
