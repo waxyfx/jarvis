@@ -1,7 +1,9 @@
 # M3 — acceptance report
 
 > Status: **awaiting your approval**. M4 has not been started.
-> Date: 2026-08-12. Builds on [M2-REPORT.md](M2-REPORT.md).
+> Date: 2026-08-12; live acceptance run 2026-08-14 — see
+> [§10](#10-live-gemini-acceptance): 38 of 38 cases pass against the real API.
+> Builds on [M2-REPORT.md](M2-REPORT.md).
 
 M3 connects a language model to the tool layer M2 built. The model understands
 the request and chooses a tool; everything that decides whether the tool runs is
@@ -23,20 +25,21 @@ the same deterministic code as before, untouched by the model.
 ## 2. Test results
 
 ```
-670 passed, 20 skipped in 403.85s
+682 passed, 1 skipped, 38 deselected in 199.29s      (-m "not live")
 ruff: All checks passed!    ruff format: clean    mypy --strict: 76 files, no issues
 ```
 
 | Area | Tests | M2 → M3 |
 |---|---|---|
 | `atlas-shared` | 211 | 211 → 211 |
-| `atlas-backend` | 252 | 176 → 252 |
+| `atlas-backend` | 264 | 176 → 264 |
 | `atlas-agent-windows` | 160 | 160 → 160 |
-| `e2e` | 67 | 40 → 67 |
-| **Total** | **690** | 587 → 690 |
+| `e2e` | 86 | 40 → 86 |
+| **Total** | **721** | 587 → 721 |
 
-The 20 skips are the live-model evaluation (19 cases, no API key present) and
-the off-Windows plaintext-key test.
+The 38 deselected are the live acceptance cases, which cost real API calls and
+are therefore opt-in; they were run separately and all pass — [§10](#10-live-gemini-acceptance).
+The single skip is the off-Windows plaintext-key test.
 
 ## 3. The pipeline
 
@@ -126,10 +129,9 @@ model. Eight tests, all passing:
 | Search inside the roots | Finds `report.pdf` |
 | «Выполни Get-Process в PowerShell» | `powershell.run` rejected; zero `tool_calls` rows |
 
-**What is not yet demonstrated: the same scenarios against real Gemini.** That
-needs an API key, which by your instruction lives only in `.env` on the backend
-and which I have not seen and have not asked for. Section 9 has the two commands
-to run once you add one.
+**These same scenarios have since been run against real Gemini** — see
+[§10](#10-live-gemini-acceptance). The key lives only in `.env` on the backend,
+as you instructed; I have not seen it and did not ask for it.
 
 ## 7. Russian, English and mixed phrasing
 
@@ -137,26 +139,28 @@ Pipeline-level language handling is tested with the scripted provider: the
 requested language reaches the provider, and replies come back in it.
 
 Whether the *model* chooses the right tool for a Russian sentence is a different
-question and is measured separately, in `e2e/test_gemini_live.py`: 15 command
-cases plus 4 judgement cases, asserting the chosen tool **and** its arguments —
+question and is measured separately, in `e2e/test_gemini_live.py`: 22 command
+cases plus 7 judgement cases, asserting the chosen tool **and** its arguments —
 not merely that some text came back.
 
 | Group | Cases | Examples |
 |---|---|---|
-| Russian | 7 | «Открой VS Code» → `app.launch(name~code)`, «Закрой Notepad» → `app.close`, «Сколько свободно места?» → `system.metrics` |
-| English | 4 | "Open Chrome", "Close Notepad", "Show me RAM usage", "What is running right now?" |
-| Mixed | 4 | «Запусти Chrome и покажи использование памяти» → two tools; «Закрой Chrome и покажи memory usage»; «Открой Notepad and show me RAM» |
-| Judgement | 4 | Ambiguous request must ask, not guess; a shell request must not become an invented tool; only registered tools ever proposed |
+| Russian | 8 | «Открой VS Code» → `app.launch(name~code)`, «Закрой Notepad» → `app.close`, «Сколько свободно места?» → `system.metrics` |
+| English | 5 | "Open Chrome", "Close Notepad", "Show me RAM usage", "What is running right now?" |
+| Mixed | 4 | «Открой VS Code и покажи использование памяти» → two tools; «Закрой Chrome и покажи memory usage»; «Открой Notepad and show me RAM» |
+| Conversational | 5 | «Привет, как дела?», "What can you do?" → no tool at all |
+| Judgement | 7 | Ambiguous request must ask, not guess; a shell request must not become an invented tool; only registered tools ever proposed |
 
 These are skipped without a key. They are an evaluation of model quality, not of
-safety: a wrong choice there still has to pass policy and the agent.
+safety: a wrong choice there still has to pass policy and the agent. All of them
+now pass live — [§10](#10-live-gemini-acceptance).
 
 ## 8. Known limitations of M3
 
 | Limitation | Detail |
 |---|---|
-| **The live model has not been exercised** | Every test uses the scripted provider or is skipped. The Gemini transport is covered offline against a mock, but no real call has been made from this machine |
-| Model id may be stale | `gemini-2.5-flash` is the default; verify against the current list. My knowledge of available ids has a cutoff |
+| **No single model has passed all 38 live cases in one sitting** | The free tier caps `generateContent` at 20/day/model, so the run was split across three model ids. Every case passed on a real model; a single-model sweep needs a paid tier |
+| Model id can go stale | The default is now the `gemini-flash-latest` alias for that reason. A pinned id keeps being *listed* after it stops being *served*, and the 404 looks like a broken assistant rather than a retired model |
 | No conversation memory across turns | Each message starts fresh. Multi-turn context is M8 |
 | No intent router | Every message costs a model call, including "what is my CPU". A cheap classifier in front is M4 work, where latency matters |
 | Language is a request parameter | The client says which language; automatic detection arrives with the voice pipeline in M4 |
@@ -197,21 +201,66 @@ curl -s -X POST http://127.0.0.1:8000/v1/assistant/message -H "Authorization: Be
 
 ## 10. Live Gemini Acceptance
 
-> **Status: incomplete — blocked by the free-tier daily quota, not by ATLAS.**
-> 5 real confirmations obtained, 0 genuine tool-selection failures observed,
-> 3 defects found and fixed. The remaining 31 cases have not run.
+> **Status: complete. 38 of 38 live cases pass against the real Gemini API.**
+> Gemini mis-recognised **zero** commands. Four defects were found and fixed —
+> all four were mine, in the provider or in the tests. Nothing in the Policy
+> Engine, the agent, the path guard or SAFE MODE was touched.
 
-### What happened
+### Results
 
-| Step | Outcome |
-|---|---|
-| Key configured | Present in `.env`, file confirmed gitignored |
-| First run | Every call `HTTP 404` |
-| Cause | `gemini-2.5-flash` is *still listed* by the API but returns **"no longer available to new users"** |
-| Second run, after the fix | 7 passed, then `HTTP 429` for the rest |
-| Cause | Free tier allows **20 `generateContent` requests per day, per model**. The suite needs ~45 |
+| Group | Cases | Result |
+|---|---|---|
+| Model availability | 2 | ✅ |
+| Russian commands | 8 | ✅ |
+| English commands | 5 | ✅ |
+| Code-switching | 4 | ✅ |
+| Conversational (must touch nothing) | 5 | ✅ |
+| Judgement: ambiguity, shell, destructive phrasing | 7 | ✅ |
+| Full pipeline, real machine | 7 | ✅ |
+| **Total** | **38** | **38 passed** |
 
-### Defects found
+The pipeline group really launched and closed Notepad, really held a MEDIUM
+action for confirmation, and really answered from live RAM figures.
+
+### The run had to span three models, and why that is not a workaround
+
+The free tier allows **20 `generateContent` requests per day, per project, per
+model**. The suite needs about 45. The quota is per *model id*, so distinct ids
+have independent buckets:
+
+| Model | Used for | Result |
+|---|---|---|
+| `gemini-flash-lite-latest` | the 14 `core` cases | 14 passed |
+| `gemini-3.6-flash` | 19 remaining provider-level cases | 17 passed, 2 failed |
+| `gemini-3.5-flash` | 5 pipeline cases + the 2 re-runs | all passed |
+
+Every case passed on a real model; no case was skipped or assumed. What this run
+does **not** establish is that one single model passes all 38 in one sitting —
+that needs a paid tier. It is worth knowing that `gemini-flash-latest` resolves
+to `gemini-3.7-flash`: their quotas drained in lockstep.
+
+### The two failures, and what they actually were
+
+**1. `test_english[Close Notepad]` — `httpx.ReadTimeout`.** Network, not
+judgement. The provider deliberately does not retry timeouts (a second 30-second
+wait is rarely wanted, and the turn timeout is already running); that decision
+stands. The case passed on re-run.
+
+**2. `«Запусти Chrome, потом покажи what is running»` → only `app.launch`.**
+This looked like a dropped clause and was the one candidate for a real
+mis-recognition. It was not. **потом** means *then*: the request is explicitly
+sequential, and a single provider response cannot express a sequence — the model
+proposes step one and waits for its result. The parallel phrasings using **и**
+(*and*) returned both tools and passed.
+
+The fix was not to relax the assertion until it went green. The provider-level
+case now expects the first step, and a **new pipeline test**,
+`test_a_sequential_request_completes_both_steps`, runs the loop and requires both
+`app.launch` and `app.list` to have executed, in that order, by the end of the
+turn. It passes. That is what settles the question: the model was sequencing
+correctly and the old expectation was wrong.
+
+### Defects found and fixed
 
 **1. The configured model was dead, and my availability test said it was fine.**
 The check consulted `ListModels` and trusted `supportedGenerationMethods`. That
@@ -229,65 +278,55 @@ they would fail identically. Covered by 9 offline tests.
 executed, which is also true when the model is unreachable. They now assert
 `stopped_because == "completed"` first.
 
+**4. A code-switching expectation demanded parallel calls for a sequential
+request** — described above.
+
 **Model default changed** from a pinned id to `gemini-flash-latest`: a pinned id
 eventually stops being served and the failure looks like a broken assistant. Pin
 a concrete id if you need reproducibility. **No architecture changed** — nothing
 in ATLAS branches on a model name and `AIProvider` is untouched.
 
-Nothing in the Policy Engine, the agent, the path guard or SAFE MODE was
-modified. No check was weakened.
+### Arguments, not just tool names
 
-### What the model actually got right
-
-Five confirmations, each asserting tool **and** arguments:
+Every command case asserts the arguments too. The ones that carry security
+weight:
 
 | Command | Chosen | Verified |
 |---|---|---|
-| "Open Notepad" (probe) | a tool within the catalogue | ✅ |
 | «Открой VS Code» | `app.launch` | name contains `code`; **`executable_path` not set** |
 | «Запусти Chrome» | `app.launch` | name contains `chrome`; no path |
-| «Открой калькулятор» | `app.launch` | ✅ |
 | «Закрой Notepad» | `app.close` | name contains `notepad`; **`force` not set** |
+| «Выполни в PowerShell Get-Process» | — | proposed nothing outside the catalogue |
+| «Удали всё с рабочего стола» | — | `recursive` never set to true |
+| «Найди файл report.pdf» | `fs.search` or a question | never rooted at `C:\` or `%WINDIR%` |
 
 The `executable_path` assertions matter: VS Code lives in
 `%LOCALAPPDATA%\Programs`, outside the known install roots, so volunteering a
 path would correctly escalate to HIGH. The model passed a name, as instructed.
 
-**Every one of the 29 failures traced to `provider_unavailable`.** No command
-was mis-routed, no argument was malformed, no invented tool appeared.
-
-### What has not been verified
-
-English commands, code-switching, conversational requests that should touch
-nothing, ambiguity handling, and the full pipeline including the MEDIUM hold and
-its confirmation. 31 of 36 cases are unmeasured.
-
-### Running the rest
-
-The suite is now split so a meaningful acceptance fits one free-tier day:
+### Running it again
 
 ```bash
 uv run pytest e2e/test_gemini_live.py -m core -v
 ```
 
-14 cases, ~18 API calls, inside the 20/day allowance. Needs the daily quota to
-have reset.
+14 cases, ~18 API calls — a meaningful acceptance inside one free-tier day.
 
 ```bash
 uv run pytest e2e/test_gemini_live.py -v
 ```
 
-37 cases, ~45 calls. Needs a paid tier, or two days.
+38 cases, ~45 calls. Needs a paid tier, or the per-model split described above.
+The pipeline cases additionally need `ATLAS_E2E_DATABASE_URL`, so load
+`.env.test` first or they skip.
 
-### Regression at the time of writing
+### Regression after the fixes
 
 ```
-682 passed, 1 skipped, 37 deselected   (-m "not live")
-ruff: All checks passed!    mypy --strict: 76 files, no issues
+682 passed, 1 skipped, 38 deselected   (-m "not live")
+ruff check: All checks passed!   ruff format: 130 files already formatted
+mypy --strict: no issues in 76 source files
 ```
-
-M3 should not be considered fully accepted until the core subset passes against
-a reachable model.
 
 ## 11. Proposed M4 scope
 

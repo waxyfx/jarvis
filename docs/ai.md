@@ -87,6 +87,7 @@ a safety one — a wrong guess would still have to pass policy.
 class AIProvider(Protocol):
     name: str
     model: str
+
     async def complete(self, request: AIRequest) -> AIResponse: ...
 ```
 

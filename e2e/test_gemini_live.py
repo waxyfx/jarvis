@@ -299,9 +299,15 @@ CODE_SWITCHING = [
         core=True,
     ),
     Case(
+        # "потом" makes this explicitly sequential, and one provider call cannot
+        # express a sequence: the model proposes the first step and waits for
+        # its result before deciding the second. Demanding both here would be
+        # asserting that the model ignores the word "then". The full sequence is
+        # checked through the loop, in
+        # TestLivePipeline.test_a_sequential_request_completes_both_steps.
         "Запусти Chrome, потом покажи what is running",
         Language.RU,
-        ("app.launch", "app.list"),
+        ("app.launch",),
     ),
 ]
 
@@ -491,6 +497,30 @@ class TestLivePipeline:
         for call in answer["executed"]:
             if call["tool"] == "app.launch":
                 kill(call["result"]["pid"])
+
+    async def test_a_sequential_request_completes_both_steps(
+        self, live_session: AssistantSession
+    ) -> None:
+        """ "Do X, then Y" — the second step needs the first one's result.
+
+        The provider-level test for this phrasing can only see the first call,
+        because a single response cannot carry a sequence. This is where the
+        claim is actually settled: run the loop and require both steps to have
+        happened by the end of the turn.
+        """
+        answer = await live_session.say("Открой Notepad, потом покажи what is running")
+
+        tools = [call["tool"] for call in answer["executed"]]
+        try:
+            assert "app.launch" in tools, answer
+            assert "app.list" in tools, (
+                f"the second step was dropped: executed={tools}, reply={answer['reply']!r}"
+            )
+            assert tools.index("app.launch") < tools.index("app.list"), tools
+        finally:
+            for call in answer["executed"]:
+                if call["tool"] == "app.launch":
+                    kill(call["result"]["pid"])
 
     async def test_a_conversational_message_touches_nothing(
         self, live_session: AssistantSession

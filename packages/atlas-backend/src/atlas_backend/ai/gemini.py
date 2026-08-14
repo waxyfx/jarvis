@@ -164,9 +164,7 @@ class GeminiProvider:
                 raise AITimeoutError("the model did not answer in time") from exc
             except httpx.HTTPError as exc:
                 # Deliberately excludes the request: it would carry the header.
-                raise AIProviderError(
-                    f"could not reach the model: {type(exc).__name__}"
-                ) from exc
+                raise AIProviderError(f"could not reach the model: {type(exc).__name__}") from exc
 
             if response.status_code == 200:
                 break
