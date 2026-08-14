@@ -12,6 +12,7 @@ provider must not become a way to read the credential.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -138,27 +139,49 @@ class GeminiProvider:
         self._base_url = settings.gemini_base_url.rstrip("/")
         self._timeout = settings.ai_request_timeout_s
         self._client = client
+        self._max_retries = settings.ai_max_retries
+        self._retry_base_delay = settings.ai_retry_base_delay_s
         self.model = settings.gemini_model
+
+    async def _post(self, url: str, payload: dict[str, Any]) -> httpx.Response:
+        if self._client is not None:
+            return await self._client.post(
+                url, json=payload, headers=self._headers(), timeout=self._timeout
+            )
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            return await client.post(url, json=payload, headers=self._headers())
 
     async def complete(self, request: AIRequest) -> AIResponse:
         payload = self._build_payload(request)
         url = f"{self._base_url}/models/{self.model}:generateContent"
 
-        try:
-            if self._client is not None:
-                response = await self._client.post(
-                    url, json=payload, headers=self._headers(), timeout=self._timeout
-                )
-            else:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    response = await client.post(url, json=payload, headers=self._headers())
-        except httpx.TimeoutException as exc:
-            raise AITimeoutError("the model did not answer in time") from exc
-        except httpx.HTTPError as exc:
-            # Deliberately excludes the request: it would carry the header.
-            raise AIProviderError(f"could not reach the model: {type(exc).__name__}") from exc
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = await self._post(url, payload)
+            except httpx.TimeoutException as exc:
+                # Not retried: a second 30-second wait is rarely what the caller
+                # wants, and the turn timeout is already ticking.
+                raise AITimeoutError("the model did not answer in time") from exc
+            except httpx.HTTPError as exc:
+                # Deliberately excludes the request: it would carry the header.
+                raise AIProviderError(
+                    f"could not reach the model: {type(exc).__name__}"
+                ) from exc
 
-        if response.status_code != 200:
+            if response.status_code == 200:
+                break
+
+            if response.status_code in _RETRYABLE_STATUS and attempt < self._max_retries:
+                delay = _retry_delay(response, self._retry_base_delay, attempt)
+                log.warning(
+                    "ai_retrying",
+                    status=response.status_code,
+                    attempt=attempt + 1,
+                    delay_s=round(delay, 1),
+                )
+                await asyncio.sleep(delay)
+                continue
+
             raise AIProviderError(f"model returned HTTP {response.status_code}")
 
         try:
@@ -266,3 +289,19 @@ class GeminiProvider:
 
 def _as_int(value: Any) -> int | None:
     return value if isinstance(value, int) else None
+
+
+#: Statuses worth trying again: a rate limit or a momentarily unhealthy backend.
+#: 4xx other than 429 are the caller's fault and will fail identically.
+_RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+
+
+def _retry_delay(response: httpx.Response, base: float, attempt: int) -> float:
+    """Honour ``Retry-After`` when the server sends one; back off otherwise."""
+    header = response.headers.get("retry-after")
+    if header:
+        try:
+            return min(float(header), 30.0)
+        except ValueError:
+            pass
+    return float(min(base * (2**attempt), 30.0))

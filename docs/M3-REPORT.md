@@ -195,7 +195,101 @@ uv run atlas-backend --port 8000
 curl -s -X POST http://127.0.0.1:8000/v1/assistant/message -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "{\"text\":\"Открой Notepad\",\"language\":\"ru\"}"
 ```
 
-## 10. Proposed M4 scope
+## 10. Live Gemini Acceptance
+
+> **Status: incomplete — blocked by the free-tier daily quota, not by ATLAS.**
+> 5 real confirmations obtained, 0 genuine tool-selection failures observed,
+> 3 defects found and fixed. The remaining 31 cases have not run.
+
+### What happened
+
+| Step | Outcome |
+|---|---|
+| Key configured | Present in `.env`, file confirmed gitignored |
+| First run | Every call `HTTP 404` |
+| Cause | `gemini-2.5-flash` is *still listed* by the API but returns **"no longer available to new users"** |
+| Second run, after the fix | 7 passed, then `HTTP 429` for the rest |
+| Cause | Free tier allows **20 `generateContent` requests per day, per model**. The suite needs ~45 |
+
+### Defects found
+
+**1. The configured model was dead, and my availability test said it was fine.**
+The check consulted `ListModels` and trusted `supportedGenerationMethods`. That
+field advertised `generateContent` for a model that answered 404 to every
+request. *A liveness check that can pass while the thing is dead is worse than
+no check.* It now **calls** the model and asserts a real tool call comes back.
+
+**2. A transient rate limit was reported to the user as "the model is
+unavailable".** A 429 means "wait a moment", not "cannot do that". The provider
+now retries 429 and 5xx with exponential backoff, honouring `Retry-After`,
+bounded by `ai_max_retries` (default 2). 4xx other than 429 are not retried —
+they would fail identically. Covered by 9 offline tests.
+
+**3. Two live pipeline tests passed vacuously.** They asserted only that nothing
+executed, which is also true when the model is unreachable. They now assert
+`stopped_because == "completed"` first.
+
+**Model default changed** from a pinned id to `gemini-flash-latest`: a pinned id
+eventually stops being served and the failure looks like a broken assistant. Pin
+a concrete id if you need reproducibility. **No architecture changed** — nothing
+in ATLAS branches on a model name and `AIProvider` is untouched.
+
+Nothing in the Policy Engine, the agent, the path guard or SAFE MODE was
+modified. No check was weakened.
+
+### What the model actually got right
+
+Five confirmations, each asserting tool **and** arguments:
+
+| Command | Chosen | Verified |
+|---|---|---|
+| "Open Notepad" (probe) | a tool within the catalogue | ✅ |
+| «Открой VS Code» | `app.launch` | name contains `code`; **`executable_path` not set** |
+| «Запусти Chrome» | `app.launch` | name contains `chrome`; no path |
+| «Открой калькулятор» | `app.launch` | ✅ |
+| «Закрой Notepad» | `app.close` | name contains `notepad`; **`force` not set** |
+
+The `executable_path` assertions matter: VS Code lives in
+`%LOCALAPPDATA%\Programs`, outside the known install roots, so volunteering a
+path would correctly escalate to HIGH. The model passed a name, as instructed.
+
+**Every one of the 29 failures traced to `provider_unavailable`.** No command
+was mis-routed, no argument was malformed, no invented tool appeared.
+
+### What has not been verified
+
+English commands, code-switching, conversational requests that should touch
+nothing, ambiguity handling, and the full pipeline including the MEDIUM hold and
+its confirmation. 31 of 36 cases are unmeasured.
+
+### Running the rest
+
+The suite is now split so a meaningful acceptance fits one free-tier day:
+
+```bash
+uv run pytest e2e/test_gemini_live.py -m core -v
+```
+
+14 cases, ~18 API calls, inside the 20/day allowance. Needs the daily quota to
+have reset.
+
+```bash
+uv run pytest e2e/test_gemini_live.py -v
+```
+
+37 cases, ~45 calls. Needs a paid tier, or two days.
+
+### Regression at the time of writing
+
+```
+682 passed, 1 skipped, 37 deselected   (-m "not live")
+ruff: All checks passed!    mypy --strict: 76 files, no issues
+```
+
+M3 should not be considered fully accepted until the core subset passes against
+a reachable model.
+
+## 11. Proposed M4 scope
 
 Confirm and I will start — this is the milestone that completes the MVP:
 

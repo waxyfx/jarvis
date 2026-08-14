@@ -112,4 +112,5 @@ markers = [
     "integration: requires a live PostgreSQL (ATLAS_TEST_DATABASE_URL)",
     "windows: requires Windows-only APIs",
     "live: calls a real external AI API (ATLAS_GEMINI_API_KEY); costs money",
+    "core: the subset of live cases that fits a free-tier daily quota",
 ]

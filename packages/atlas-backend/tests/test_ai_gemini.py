@@ -339,6 +339,105 @@ class TestFailures:
         assert API_KEY not in str(exc.value)
 
 
+class TestRetries:
+    """A rate limit is "wait a moment", not "cannot do that"."""
+
+    @pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
+    async def test_transient_failures_are_retried(self, status: int) -> None:
+        attempts = 0
+
+        def handler(_: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                return httpx.Response(status)
+            return httpx.Response(200, json=candidate([{"text": "готово"}]))
+
+        provider = GeminiProvider(
+            make_settings(ai_retry_base_delay_s=0.11),
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        response = await provider.complete(request_for())
+
+        assert attempts == 2
+        assert response.text == "готово"
+
+    @pytest.mark.parametrize("status", [400, 401, 403, 404])
+    async def test_permanent_failures_are_not_retried(self, status: int) -> None:
+        attempts = 0
+
+        def handler(_: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            return httpx.Response(status)
+
+        provider = GeminiProvider(
+            make_settings(ai_retry_base_delay_s=0.11),
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        with pytest.raises(AIProviderError):
+            await provider.complete(request_for())
+
+        # Retrying a 404 just wastes the user's time; it will fail identically.
+        assert attempts == 1
+
+    async def test_retries_are_bounded(self) -> None:
+        attempts = 0
+
+        def handler(_: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            return httpx.Response(429)
+
+        provider = GeminiProvider(
+            make_settings(ai_max_retries=2, ai_retry_base_delay_s=0.11),
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        with pytest.raises(AIProviderError, match="HTTP 429"):
+            await provider.complete(request_for())
+
+        assert attempts == 3  # the original plus two retries
+
+    async def test_retry_after_is_honoured(self) -> None:
+        import time
+
+        attempts = 0
+
+        def handler(_: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                return httpx.Response(429, headers={"retry-after": "0.4"})
+            return httpx.Response(200, json=candidate([{"text": "ок"}]))
+
+        provider = GeminiProvider(
+            make_settings(ai_retry_base_delay_s=5.0),
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        started = time.monotonic()
+        await provider.complete(request_for())
+        elapsed = time.monotonic() - started
+
+        # The server's 0.4s wins over our 5s default.
+        assert 0.3 < elapsed < 3.0
+
+    async def test_retries_can_be_switched_off(self) -> None:
+        attempts = 0
+
+        def handler(_: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            return httpx.Response(503)
+
+        provider = GeminiProvider(
+            make_settings(ai_max_retries=0),
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        with pytest.raises(AIProviderError):
+            await provider.complete(request_for())
+        assert attempts == 1
+
+
 class TestConfiguration:
     def test_a_provider_without_a_key_refuses_to_start(self) -> None:
         with pytest.raises(AIProviderError, match="no Gemini API key"):

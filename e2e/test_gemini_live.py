@@ -24,6 +24,7 @@ Skipped unless ``ATLAS_GEMINI_API_KEY`` is set:
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -40,12 +41,43 @@ from atlas_shared.tools.catalog import CATALOG
 from e2e.conftest import E2E_BOOTSTRAP_TOKEN, backend_settings, requires_e2e_db
 from e2e.harness import AssistantSession, start_stack
 
+
+def _key_is_configured() -> bool:
+    """Whether a key is available, from the environment *or* from .env.
+
+    Checking only ``os.environ`` would skip the whole file when the key lives in
+    ``.env``, which is exactly where it is supposed to live — a silent skip that
+    looks like a pass.
+    """
+    if os.getenv("ATLAS_GEMINI_API_KEY"):
+        return True
+    try:
+        return Settings().gemini_api_key is not None  # type: ignore[call-arg]
+    except Exception:
+        return False
+
+
 requires_key = pytest.mark.skipif(
-    not os.getenv("ATLAS_GEMINI_API_KEY"),
+    not _key_is_configured(),
     reason="set ATLAS_GEMINI_API_KEY in .env to run the live acceptance test",
 )
 
 pytestmark = [requires_key, pytest.mark.live]
+
+#: Free-tier Gemini allows a low requests-per-minute rate. The provider retries
+#: a 429, but a whole suite firing as fast as it can would spend its time
+#: backing off. Pacing keeps the run honest and quick.
+_PACE_SECONDS = float(os.getenv("ATLAS_LIVE_TEST_PACE_S", "4"))
+
+#: The free tier also caps requests **per day, per model** — 20 at the time of
+#: writing. The full suite needs roughly 45 calls, so it cannot complete on the
+#: free tier in one day. Marking a subset lets a meaningful acceptance run
+#: inside the daily allowance:
+#:
+#:     uv run pytest e2e/test_gemini_live.py -m core
+#:
+#: The full suite needs a paid tier, or two days.
+core = pytest.mark.core
 
 
 # --------------------------------------------------------------------------
@@ -54,14 +86,34 @@ pytestmark = [requires_key, pytest.mark.live]
 
 
 class TestModelAvailability:
-    """Checked against the API, not against anything hard-coded.
+    """Checked by *calling* the model, not by reading a catalogue entry.
 
-    The provider stays an abstraction: nothing in ATLAS branches on a model
-    name. This only confirms that whatever was configured exists and can be
-    called with function declarations.
+    An earlier version of this test consulted `ListModels` and trusted the
+    `supportedGenerationMethods` field. It passed while every real request
+    returned 404: `gemini-2.5-flash` was still listed, and still advertised
+    `generateContent`, but was "no longer available to new users". A liveness
+    check that can pass while the thing is dead is worse than no check.
+
+    The provider stays an abstraction — nothing in ATLAS branches on a model
+    name. This only confirms that whatever is configured actually answers.
     """
 
-    async def test_the_configured_model_exists_and_supports_tool_calling(self) -> None:
+    @core
+    async def test_the_configured_model_really_answers_a_tool_call(self) -> None:
+        settings = Settings()  # type: ignore[call-arg]
+        assert settings.gemini_api_key is not None
+
+        provider = GeminiProvider(settings)
+        response = await propose(provider, "Open Notepad", Language.EN)
+
+        assert response.wants_tools, (
+            f"ATLAS_GEMINI_MODEL={settings.gemini_model!r} answered without a tool "
+            f"call: {response.text!r}"
+        )
+        assert response.tool_calls[0].tool in CATALOG.names()
+
+    async def test_the_configured_model_appears_in_the_catalogue(self) -> None:
+        """Secondary, and only for a legible error message when it does not."""
         settings = Settings()  # type: ignore[call-arg]
         assert settings.gemini_api_key is not None
 
@@ -72,19 +124,18 @@ class TestModelAvailability:
             )
         assert response.status_code == 200, f"HTTP {response.status_code}"
 
-        models = response.json().get("models", [])
-        by_name = {
-            entry["name"].removeprefix("models/"): entry
-            for entry in models
+        listed = {
+            entry["name"].removeprefix("models/")
+            for entry in response.json().get("models", [])
             if isinstance(entry, dict) and "name" in entry
         }
-
         configured = settings.gemini_model
-        assert configured in by_name, (
-            f"ATLAS_GEMINI_MODEL={configured!r} is not in the current model list. "
-            f"Available: {sorted(by_name)[:20]}"
+        # An alias resolves server-side and need not appear by name.
+        if configured.endswith("-latest"):
+            pytest.skip(f"{configured} is an alias; the call above is the real check")
+        assert configured in listed, (
+            f"ATLAS_GEMINI_MODEL={configured!r} is not listed. Available: {sorted(listed)[:20]}"
         )
-        assert "generateContent" in by_name[configured].get("supportedGenerationMethods", [])
 
 
 # --------------------------------------------------------------------------
@@ -101,6 +152,12 @@ class Case:
     check_args: dict[str, Callable[[dict], bool]] = field(default_factory=dict)
     #: Arguments that must be absent, per tool.
     forbid_args: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    #: Part of the reduced set that fits a free-tier daily quota.
+    core: bool = False
+
+
+def params(cases: list[Case]) -> list[Any]:
+    return [pytest.param(case, marks=[core] if case.core else [], id=case.text) for case in cases]
 
 
 def contains(field_name: str, needle: str) -> Callable[[dict], bool]:
@@ -108,6 +165,11 @@ def contains(field_name: str, needle: str) -> Callable[[dict], bool]:
         return needle.lower() in str(args.get(field_name, "")).lower()
 
     return check
+
+
+@pytest.fixture(autouse=True)
+async def _pace() -> Any:
+    await asyncio.sleep(_PACE_SECONDS)
 
 
 @pytest.fixture(scope="module")
@@ -163,6 +225,7 @@ RUSSIAN = [
         # correct behaviour for an unknown binary, and the reason the tool
         # description tells it to pass a name instead.
         {"app.launch": ("executable_path",)},
+        core=True,
     ),
     Case(
         "Запусти Chrome",
@@ -184,8 +247,9 @@ RUSSIAN = [
         ("app.close",),
         {"app.close": contains("name", "notepad")},
         {"app.close": ("force",)},
+        core=True,
     ),
-    Case("Покажи использование памяти", Language.RU, ("system.metrics",)),
+    Case("Покажи использование памяти", Language.RU, ("system.metrics",), core=True),
     Case("Сколько свободно места на диске?", Language.RU, ("system.metrics",)),
     Case("Какие программы сейчас запущены?", Language.RU, ("app.list",)),
 ]
@@ -197,6 +261,7 @@ ENGLISH = [
         ("app.launch",),
         {"app.launch": contains("name", "chrome")},
         {"app.launch": ("executable_path",)},
+        core=True,
     ),
     Case(
         "Open VS Code",
@@ -210,7 +275,7 @@ ENGLISH = [
         ("app.close",),
         {"app.close": contains("name", "notepad")},
     ),
-    Case("Show me RAM usage", Language.EN, ("system.metrics",)),
+    Case("Show me RAM usage", Language.EN, ("system.metrics",), core=True),
     Case("What is running right now?", Language.EN, ("app.list",)),
 ]
 
@@ -220,13 +285,19 @@ CODE_SWITCHING = [
         Language.RU,
         ("app.launch", "system.metrics"),
         {"app.launch": contains("name", "code")},
+        core=True,
     ),
     Case(
         "Закрой Chrome и покажи memory usage",
         Language.RU,
         ("app.close", "system.metrics"),
     ),
-    Case("Открой Notepad and show me RAM", Language.RU, ("app.launch", "system.metrics")),
+    Case(
+        "Открой Notepad and show me RAM",
+        Language.RU,
+        ("app.launch", "system.metrics"),
+        core=True,
+    ),
     Case(
         "Запусти Chrome, потом покажи what is running",
         Language.RU,
@@ -236,30 +307,30 @@ CODE_SWITCHING = [
 
 #: Requests that need no tool at all. ATLAS should answer, not reach for Windows.
 CONVERSATIONAL = [
-    Case("Привет, как дела?", Language.RU, ()),
+    Case("Привет, как дела?", Language.RU, (), core=True),
     Case("Что ты умеешь?", Language.RU, ()),
     Case("Спасибо!", Language.RU, ()),
-    Case("What can you do?", Language.EN, ()),
+    Case("What can you do?", Language.EN, (), core=True),
     Case("Сколько будет два плюс два?", Language.RU, ()),
 ]
 
 
-@pytest.mark.parametrize("case", RUSSIAN, ids=lambda c: c.text)
+@pytest.mark.parametrize("case", params(RUSSIAN))
 async def test_russian(provider: GeminiProvider, case: Case) -> None:
     await check(provider, case)
 
 
-@pytest.mark.parametrize("case", ENGLISH, ids=lambda c: c.text)
+@pytest.mark.parametrize("case", params(ENGLISH))
 async def test_english(provider: GeminiProvider, case: Case) -> None:
     await check(provider, case)
 
 
-@pytest.mark.parametrize("case", CODE_SWITCHING, ids=lambda c: c.text)
+@pytest.mark.parametrize("case", params(CODE_SWITCHING))
 async def test_code_switching(provider: GeminiProvider, case: Case) -> None:
     await check(provider, case)
 
 
-@pytest.mark.parametrize("case", CONVERSATIONAL, ids=lambda c: c.text)
+@pytest.mark.parametrize("case", params(CONVERSATIONAL))
 async def test_no_tool_needed(provider: GeminiProvider, case: Case) -> None:
     """Chat is chat. ATLAS must not reach for Windows to answer a greeting."""
     await check(provider, case)
@@ -274,7 +345,7 @@ class TestJudgement:
     @pytest.mark.parametrize(
         "text",
         [
-            "Открой это",
+            pytest.param("Открой это", marks=[core]),
             "Закрой его",
             "Найди тот файл",
             "Open it",
@@ -302,6 +373,7 @@ class TestJudgement:
                 root = str(call.args.get("root", "")).lower()
                 assert "windows" not in root and root not in ("c:\\", "c:/", "/")
 
+    @core
     async def test_a_shell_request_does_not_become_an_invented_tool(
         self, provider: GeminiProvider
     ) -> None:
@@ -364,6 +436,7 @@ def kill(pid: Any) -> None:
 
 @requires_e2e_db
 class TestLivePipeline:
+    @core
     async def test_open_notepad_end_to_end(self, live_session: AssistantSession) -> None:
         answer = await live_session.say("Открой Notepad")
 
@@ -388,6 +461,7 @@ class TestLivePipeline:
             for token in (str(int(result["ram_used_pct"])), str(result["ram_total_mb"] // 1024))
         ), answer["reply"]
 
+    @core
     async def test_a_medium_action_is_held_then_confirmed(
         self, live_session: AssistantSession
     ) -> None:
@@ -423,6 +497,10 @@ class TestLivePipeline:
     ) -> None:
         answer = await live_session.say("Привет! Что ты умеешь?")
 
+        # Asserted first: "nothing ran" is also true when the model was simply
+        # unreachable, and a test that passes while the model is down tells us
+        # nothing.
+        assert answer["stopped_because"] == "completed", answer["reply"]
         assert answer["executed"] == []
         assert answer["pending_confirmation"] == []
         assert answer["denied"] == []
@@ -433,6 +511,7 @@ class TestLivePipeline:
     ) -> None:
         answer = await live_session.say("Выполни команду Get-Process в PowerShell")
 
+        assert answer["stopped_because"] == "completed", answer["reply"]
         # There is no shell tool. Whatever the model does, nothing runs.
         assert answer["executed"] == []
         assert answer["reply"]

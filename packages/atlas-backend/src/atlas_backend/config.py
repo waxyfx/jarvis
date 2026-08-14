@@ -96,10 +96,21 @@ class Settings(BaseSettings):
     #: assistant endpoint reports that no model is configured, rather than
     #: pretending to work.
     gemini_api_key: SecretStr | None = None
-    #: Verify against the current model list before deploying; ids change.
-    gemini_model: str = "gemini-2.5-flash"
+    #: An alias rather than a pinned id, on purpose. A pinned model eventually
+    #: stops being served — `gemini-2.5-flash` returned 404 with "no longer
+    #: available to new users" while still appearing in the model list — and the
+    #: failure looks like a broken assistant. The alias tracks the current flash
+    #: model; pin a specific id here if you need reproducibility, and let
+    #: e2e/test_gemini_live.py tell you when behaviour shifts.
+    gemini_model: str = "gemini-flash-latest"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     ai_request_timeout_s: float = Field(default=30.0, gt=1.0, le=300.0)
+    #: Retries for transient upstream failures (429, 5xx). A rate limit is a
+    #: "wait a moment", not a "cannot do that" — telling the user the model is
+    #: unavailable when one retry would have worked is a worse answer than the
+    #: delay. Bounded so it cannot become a source of latency or cost.
+    ai_max_retries: int = Field(default=2, ge=0, le=5)
+    ai_retry_base_delay_s: float = Field(default=2.0, gt=0.1, le=30.0)
 
     #: Runaway-loop guards. A single user message may cause at most this many
     #: tool calls, across at most this many round trips to the model, within
