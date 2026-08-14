@@ -18,48 +18,17 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-import httpx
 import pytest
 
-from atlas_agent.backend import BackendClient
-from atlas_agent.config import AgentSettings
-from atlas_agent.identity import IdentityStore
-from atlas_agent.runner import ToolRunner
-from atlas_agent.safety.mode import ModeChangeSource, SafeModeController
-from atlas_agent.safety.paths import PathGuard
-from atlas_agent.transport import AgentTransport
+from atlas_agent.safety.mode import ModeChangeSource
 from atlas_backend.ai import ScriptedProvider, text_reply, tool_reply
-from atlas_shared.tools.manifest import RiskContext
 from e2e.conftest import E2E_BOOTSTRAP_TOKEN, backend_settings, query, requires_e2e_db
+from e2e.harness import AssistantSession, start_stack
 
 pytestmark = [requires_e2e_db, pytest.mark.integration]
 
 
-class Session:
-    def __init__(self, url: str, token: str, provider: ScriptedProvider, controller) -> None:  # type: ignore[no-untyped-def]
-        self.url = url
-        self.token = token
-        self.provider = provider
-        self.controller = controller
-
-    async def say(self, text: str, language: str = "ru") -> dict[str, Any]:
-        async with httpx.AsyncClient(base_url=self.url, timeout=60.0) as client:
-            response = await client.post(
-                "/v1/assistant/message",
-                json={"text": text, "language": language},
-                headers={"Authorization": f"Bearer {self.token}"},
-            )
-        assert response.status_code == 200, response.text
-        return dict(response.json())
-
-    async def confirm(self, call_id: str) -> dict[str, Any]:
-        async with httpx.AsyncClient(base_url=self.url, timeout=60.0) as client:
-            response = await client.post(
-                f"/v1/tools/calls/{call_id}/confirm",
-                headers={"Authorization": f"Bearer {self.token}"},
-            )
-        assert response.status_code == 200, response.text
-        return dict(response.json())
+Session = AssistantSession
 
 
 @pytest.fixture
@@ -76,97 +45,32 @@ def allowed_file_roots(workspace: Path) -> tuple[str, ...]:
     return (str(workspace / "allowed"),)
 
 
-def make_session_factory(tmp_path: Path, workspace: Path, allowed_roots: tuple[str, ...]):  # type: ignore[no-untyped-def]
-    """Start a backend with a scripted model, plus a real connected agent."""
-    import threading
-    import time
-
-    import uvicorn
-
-    from atlas_backend.main import create_app
-
-    async def build(script: list[Any]):  # type: ignore[no-untyped-def]
-        provider = ScriptedProvider(script)
-        app = create_app(backend_settings(allowed_roots), ai_provider=provider)
-        config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="error")
-        server = uvicorn.Server(config)
-        thread = threading.Thread(target=server.run, daemon=True)
-        thread.start()
-
-        deadline = time.monotonic() + 20
-        while not server.started and time.monotonic() < deadline:
-            await asyncio.sleep(0.05)
-        assert server.started, "backend did not start"
-        url = f"http://127.0.0.1:{server.servers[0].sockets[0].getsockname()[1]}"
-
-        settings = AgentSettings(
-            backend_url=url,
-            identity_path=tmp_path / "identity.json",
-            mode_state_path=tmp_path / "mode.json",
-            allow_plaintext_key=True,
-            device_name="m3-agent",
-            request_timeout_s=15.0,
-            reconnect_initial_s=0.2,
-            monitor_enabled=False,
-        )
-        store = IdentityStore(settings.identity_path, allow_plaintext=True)
-
-        async with httpx.AsyncClient(base_url=url, timeout=15.0) as client:
-            started = await client.post(
-                "/v1/pair/start",
-                json={"kind": "windows_agent", "name": "m3-agent"},
-                headers={"X-Atlas-Bootstrap-Token": E2E_BOOTSTRAP_TOKEN},
-            )
-        assert started.status_code == 201
-
-        identity = await BackendClient(settings).enrol(store.create(), started.json()["code"])
-        store.save(identity)
-
-        allowed = workspace / "allowed"
-        controller = SafeModeController(settings.mode_state_path)
-        transport = AgentTransport(
-            settings,
-            identity,
-            runner=ToolRunner(
-                safe_mode=controller,
-                path_guard=PathGuard([allowed]),
-                risk_context=RiskContext(
-                    allowed_roots=(str(allowed),), executable_roots=(r"C:\Windows",)
-                ),
-            ),
-            safe_mode=controller,
-        )
-        stop = asyncio.Event()
-        task = asyncio.create_task(transport.run(stop=stop))
-        await asyncio.wait_for(transport.connected.wait(), timeout=20)
-
-        token = await BackendClient(settings).authenticate(identity)
-        return Session(url, token, provider, controller), stop, task, server, thread
-
-    return build
-
-
 @pytest.fixture
 async def session_factory(tmp_path: Path, workspace: Path, allowed_file_roots: tuple[str, ...]):  # type: ignore[no-untyped-def]
-    build = make_session_factory(tmp_path, workspace, allowed_file_roots)
+    """Start a stack whose model answers from a script.
+
+    The same harness the live acceptance tests use; only the provider differs.
+    """
     running: list[Any] = []
 
     async def start(script: list[Any]) -> Session:
-        session, stop, task, server, thread = await build(script)
-        running.append((stop, task, server, thread))
-        return session
+        stack = await start_stack(
+            provider=ScriptedProvider(script),
+            settings_factory=backend_settings,
+            tmp_path=tmp_path,
+            workspace=workspace,
+            allowed_roots=allowed_file_roots,
+            bootstrap_token=E2E_BOOTSTRAP_TOKEN,
+            device_name="m3-agent",
+        )
+        running.append(stack)
+        return stack.session
 
     try:
         yield start
     finally:
-        for stop, task, server, thread in running:
-            stop.set()
-            await asyncio.wait_for(task, timeout=20)
-            server.should_exit = True
-            for _ in range(200):
-                if not thread.is_alive():
-                    break
-                await asyncio.sleep(0.05)
+        for stack in running:
+            await stack.shutdown()
 
 
 # ------------------------------------------------------- demo scenarios
