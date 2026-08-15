@@ -133,6 +133,7 @@ module = [
     "onnxruntime.*",
     "piper.*",
     "sounddevice.*",
+    "pvporcupine.*",
 ]
 ignore_missing_imports = true
 
