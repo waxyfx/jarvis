@@ -91,6 +91,9 @@ class TurnResult:
     stopped_because: str = StopReason.COMPLETED
     input_tokens: int = 0
     output_tokens: int = 0
+    #: Which model actually answered, when the provider says so. Diagnostics
+    #: only — no decision anywhere reads it.
+    served_model: str = ""
 
     @property
     def acted(self) -> bool:
@@ -172,11 +175,38 @@ class Assistant:
                 "rejected": len(result.rejected),
                 "input_tokens": result.input_tokens,
                 "output_tokens": result.output_tokens,
+                "model": result.served_model,
             },
         )
         return result
 
     # ------------------------------------------------------------------ loop
+
+    def _note_served_model(self, result: TurnResult, served: str) -> None:
+        """Record which model answered, without letting anything depend on it.
+
+        The configured id may be an alias — `*-latest` is allowed as a default
+        precisely so a retired model does not take the assistant down with it.
+        The cost of that choice is that the id in the config is not evidence of
+        what ran, and an alias can be repointed between one turn and the next.
+        So the trail records what the provider reports, and a change inside a
+        single turn is worth saying out loud: it means two different models
+        contributed to one answer.
+
+        Model ids are not sensitive. The key is not in scope here and never
+        reaches a log line.
+        """
+        if not served or served == result.served_model:
+            return
+        if result.served_model:
+            log.warning(
+                "ai_model_changed_mid_turn",
+                previous=result.served_model,
+                now=served,
+            )
+        else:
+            log.info("ai_model_served", requested=self._provider.model, served=served)
+        result.served_model = served
 
     async def _run(
         self,
@@ -216,6 +246,7 @@ class Assistant:
 
             result.input_tokens += response.input_tokens or 0
             result.output_tokens += response.output_tokens or 0
+            self._note_served_model(result, response.served_model)
 
             if not response.wants_tools:
                 # A plain answer, or a clarifying question. Either way, done.

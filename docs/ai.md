@@ -112,6 +112,39 @@ API key.
 * `ATLAS_GEMINI_MODEL` is configurable; verify the id against the current model
   list before deploying.
 
+## Model ids and aliases
+
+A `*-latest` alias is an acceptable **default**, and is the current one. A pinned
+id keeps being *listed* long after it stops being *served*: during M3 acceptance
+`gemini-2.5-flash` still advertised `generateContent` and answered 404 to every
+request, which presents as a broken assistant rather than a retired model.
+
+The rule that follows from allowing an alias:
+
+> **Nothing in ATLAS may assume the alias is stable.** No capability check, no
+> branch, no parsed version number, no cached assumption about context window,
+> tool-calling behaviour or pricing may key off the configured id. The alias is a
+> starting point for a connection, not a description of a model. `gemini-flash-latest`
+> resolved to `gemini-3.7-flash` at the time of writing, and that mapping is
+> Google's to change without notice.
+
+Two consequences, both implemented:
+
+* **The trail records what answered, not what was asked for.** `AIResponse`
+  carries `model` (the configured id) *and* `model_version` (what the provider
+  reports served the request). The turn's audit entry stores the latter, and
+  `ai_model_served` logs the pair once per turn. If the alias moves between
+  iterations of a single turn, `ai_model_changed_mid_turn` says so — two models
+  contributed to one answer, which is worth knowing when a reply looks odd.
+* **Nothing reads it back.** `served_model` is diagnostic. No policy, no
+  validation and no control flow consults it, so a surprise alias change cannot
+  alter what ATLAS is willing to do.
+
+Model ids are not sensitive and are safe to log. The API key is not part of this
+telemetry and never appears in a log line, an audit payload or an exception.
+Pin a concrete id when you need reproducibility — for a benchmark or a
+regression — and accept that you must then watch for its retirement yourself.
+
 ## Cost control
 
 Token use is counted per day in `api_usage`. When

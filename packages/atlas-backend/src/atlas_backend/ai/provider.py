@@ -121,9 +121,21 @@ class AIResponse:
     #: does not report it.
     input_tokens: int | None = None
     output_tokens: int | None = None
+    #: What was *asked for* — the configured id, which may be a moving alias
+    #: such as ``gemini-flash-latest``.
     model: str = ""
+    #: What actually answered, as reported by the provider. An alias resolves
+    #: server-side and its target changes without notice, so the configured id
+    #: is not evidence of which model produced a given reply. Nothing may branch
+    #: on this value: it exists so the trail can say what really ran.
+    model_version: str = ""
     raw_finish_reason: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def served_model(self) -> str:
+        """The most specific identifier available for what answered."""
+        return self.model_version or self.model
 
     @property
     def wants_tools(self) -> bool:

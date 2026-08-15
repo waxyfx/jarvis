@@ -438,6 +438,40 @@ class TestRetries:
         assert attempts == 1
 
 
+class TestServedModel:
+    """A `*-latest` alias is allowed as a default, so the configured id is not
+    evidence of what actually answered. The provider reports both."""
+
+    async def test_the_served_version_is_captured_when_reported(self) -> None:
+        body = candidate([{"text": "готово"}]) | {"modelVersion": "gemini-3.7-flash"}
+        provider = provider_with(lambda request: httpx.Response(200, json=body))
+
+        response = await provider.complete(request_for())
+
+        assert response.model == "test-model"
+        assert response.model_version == "gemini-3.7-flash"
+        assert response.served_model == "gemini-3.7-flash"
+
+    async def test_the_configured_id_is_used_when_nothing_is_reported(self) -> None:
+        provider = provider_with(
+            lambda request: httpx.Response(200, json=candidate([{"text": "готово"}]))
+        )
+
+        response = await provider.complete(request_for())
+
+        assert response.model_version == ""
+        assert response.served_model == "test-model"
+
+    async def test_a_non_string_version_is_ignored_rather_than_trusted(self) -> None:
+        body = candidate([{"text": "готово"}]) | {"modelVersion": {"unexpected": True}}
+        provider = provider_with(lambda request: httpx.Response(200, json=body))
+
+        response = await provider.complete(request_for())
+
+        assert response.model_version == ""
+        assert response.served_model == "test-model"
+
+
 class TestConfiguration:
     def test_a_provider_without_a_key_refuses_to_start(self) -> None:
         with pytest.raises(AIProviderError, match="no Gemini API key"):

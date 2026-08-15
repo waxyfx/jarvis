@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import replace
 
 import pytest
 from starlette.testclient import TestClient
@@ -374,6 +375,45 @@ class TestRepeatAndAudit:
         rows = fetch_sql("SELECT role, content FROM messages ORDER BY created_at")
         assert ("user", "здравствуй") in rows
         assert ("assistant", "Привет.") in rows
+
+
+class TestServedModelInTheTrail:
+    """`*-latest` is an allowed default, so the configured id proves nothing
+    about what answered. The trail records what the provider reported."""
+
+    def test_the_turn_records_which_model_actually_answered(self, settings) -> None:  # type: ignore[no-untyped-def]
+        answered = replace(text_reply("Готово."), model_version="gemini-3.7-flash")
+        with assistant(settings, [answered]) as (c, _, token):
+            say(c, token, "привет")
+
+        assert "gemini-3.7-flash" in turn_payload()
+
+    def test_a_provider_that_reports_nothing_falls_back_to_the_configured_id(
+        self,
+        settings,  # type: ignore[no-untyped-def]
+    ) -> None:
+        with assistant(settings, [text_reply("Готово.")]) as (c, _, token):
+            say(c, token, "привет")
+
+        # `text_reply` sets model="scripted-1" and no version.
+        assert "scripted-1" in turn_payload()
+
+    def test_an_alias_moving_mid_turn_is_still_recorded(self, settings) -> None:  # type: ignore[no-untyped-def]
+        script = [
+            replace(tool_reply(("system.metrics", {})), model_version="gemini-3.7-flash"),
+            replace(text_reply("Готово."), model_version="gemini-3.8-flash"),
+        ]
+        with assistant(settings, script) as (c, _, token):
+            say(c, token, "покажи память")
+
+        # Two models contributed to one answer. The trail keeps the last, and
+        # the mid-turn change is logged; what must not happen is silence.
+        assert "gemini-3.8-flash" in turn_payload()
+
+
+def turn_payload() -> str:
+    rows = fetch_sql("SELECT payload FROM audit_log WHERE event_type = 'assistant.turn_completed'")
+    return str(rows[0][0])
 
 
 class TestUntrustedContent:

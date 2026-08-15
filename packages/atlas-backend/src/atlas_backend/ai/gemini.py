@@ -260,6 +260,12 @@ class GeminiProvider:
         usage = body.get("usageMetadata", {}) if isinstance(body.get("usageMetadata"), dict) else {}
         text = "\n".join(texts).strip()
 
+        # What actually answered. `self.model` may be an alias, and an alias is
+        # repointed without warning — during M3 acceptance `gemini-flash-latest`
+        # was found to resolve to `gemini-3.7-flash`. Recording only the
+        # configured id would make the trail claim something it cannot know.
+        served = body.get("modelVersion")
+
         if calls:
             reason = FinishReason.TOOL_CALLS
         elif raw_finish == "MAX_TOKENS":
@@ -281,6 +287,7 @@ class GeminiProvider:
             input_tokens=_as_int(usage.get("promptTokenCount")),
             output_tokens=_as_int(usage.get("candidatesTokenCount")),
             model=self.model,
+            model_version=served if isinstance(served, str) else "",
             raw_finish_reason=raw_finish,
         )
 
