@@ -72,6 +72,21 @@ class Phrases:
     positive_en: tuple[str, ...] = ("Jarvis", "Jarvis.", "Jarvis?", "Hey Jarvis")
     positive_ru: tuple[str, ...] = ("Джарвис", "Джарвис.", "Джарвис?", "Эй, Джарвис")
 
+    @property
+    def spoken_en(self) -> str:
+        """The bare word, for anything that needs to say it once.
+
+        The acceptance test used to hard-code "Atlas" in five places. Against a
+        model trained on a different word that reports 0% recall in every
+        positive group — three hours of pipeline measuring nothing, and a result
+        that looks like a catastrophic model failure rather than a stale string.
+        """
+        return self.positive_en[0]
+
+    @property
+    def spoken_ru(self) -> str:
+        return self.positive_ru[0]
+
     #: Near-misses. These are the expensive negatives: a model that has never
     #: heard "at last" will happily fire on it, and no amount of unrelated
     #: podcast audio teaches it otherwise. «атлас» as an ordinary noun matters

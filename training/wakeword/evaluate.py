@@ -43,7 +43,7 @@ def spotter(model: Path, threshold: float = 0.5) -> OpenWakeWord:
         melspectrogram_path=MELSPECTROGRAM,
         embedding_path=EMBEDDING,
         threshold=threshold,
-        label="atlas",
+        label=CONFIG.phrases.spoken_en.lower(),
     )
 
 
@@ -148,7 +148,7 @@ from atlas_voice.engines.openwakeword import OpenWakeWord
 process = psutil.Process()
 baseline = process.memory_info().rss
 detector = OpenWakeWord({model!r}, melspectrogram_path={mel!r},
-                        embedding_path={embed!r}, label="atlas")
+                        embedding_path={embed!r}, label="wake")
 loaded = process.memory_info().rss
 
 chunk = np.zeros(1280, dtype=np.float32)
@@ -270,6 +270,8 @@ def build_trials(model: Path, *, rng: random.Random, quick: bool) -> list[Trial]
             )
         )
 
+    wake_en = CONFIG.phrases.spoken_en
+    wake_ru = CONFIG.phrases.spoken_ru
     english = CONFIG.voices.english_multispeaker
     speakers = [
         rng.randrange(CONFIG.voices.english_speaker_count) for _ in range(6 if quick else 25)
@@ -278,9 +280,9 @@ def build_trials(model: Path, *, rng: random.Random, quick: bool) -> list[Trial]
 
     # --- the wake word, said plainly, in both languages -------------------
     for speaker in tqdm(speakers, desc="en wake", unit="clip"):
-        word = synthesise(english, "Atlas", rng=rng, speaker_id=speaker)
+        word = synthesise(english, wake_en, rng=rng, speaker_id=speaker)
         add(
-            f"en_atlas_s{speaker}",
+            f"en_wake_s{speaker}",
             "wake_word_english",
             pad(word),
             wake=True,
@@ -289,9 +291,9 @@ def build_trials(model: Path, *, rng: random.Random, quick: bool) -> list[Trial]
 
     for voice in tqdm(russian_voices, desc="ru wake", unit="voice"):
         for _ in range(2 if quick else 7):
-            word = synthesise(voice, "Атлас", rng=rng)
+            word = synthesise(voice, wake_ru, rng=rng)
             add(
-                f"ru_atlas_{voice}",
+                f"ru_wake_{voice}",
                 "wake_word_russian",
                 pad(word),
                 wake=True,
@@ -301,9 +303,9 @@ def build_trials(model: Path, *, rng: random.Random, quick: bool) -> list[Trial]
     # --- quiet, ordinary and loud ----------------------------------------
     for label, volume in (("quiet", 0.12), ("normal", 0.7), ("loud", 1.0)):
         for speaker in speakers[:4]:
-            word = synthesise(english, "Atlas", rng=rng, speaker_id=speaker, volume=volume)
+            word = synthesise(english, wake_en, rng=rng, speaker_id=speaker, volume=volume)
             add(
-                f"en_atlas_{label}_s{speaker}",
+                f"en_wake_{label}_s{speaker}",
                 f"loudness_{label}",
                 pad(word),
                 wake=True,
@@ -313,7 +315,7 @@ def build_trials(model: Path, *, rng: random.Random, quick: bool) -> list[Trial]
     # --- distance, approximated by reverberation and level ----------------
     for label, gain, wet in (("near", 0.7, False), ("mid", 0.25, True), ("far", 0.06, True)):
         for speaker in speakers[:4]:
-            word = synthesise(english, "Atlas", rng=rng, speaker_id=speaker)
+            word = synthesise(english, wake_en, rng=rng, speaker_id=speaker)
             audio = pad(word)
             if wet and impulses:
                 audio = reverberate(audio, rng.choice(impulses))
@@ -321,7 +323,7 @@ def build_trials(model: Path, *, rng: random.Random, quick: bool) -> list[Trial]
             if peak > 0:
                 audio = (audio / peak * gain).astype(np.float32)
             add(
-                f"en_atlas_{label}_s{speaker}",
+                f"en_wake_{label}_s{speaker}",
                 f"distance_{label}",
                 audio,
                 wake=True,
@@ -331,12 +333,12 @@ def build_trials(model: Path, *, rng: random.Random, quick: bool) -> list[Trial]
     # --- the wake word over background noise ------------------------------
     for snr in (20.0, 10.0, 5.0):
         for speaker in speakers[:4]:
-            word = synthesise(english, "Atlas", rng=rng, speaker_id=speaker)
+            word = synthesise(english, wake_en, rng=rng, speaker_id=speaker)
             audio = pad(word)
             if noises:
                 audio = mix_noise(audio, noise_like(rng.choice(noises), len(audio)), snr)
             add(
-                f"en_atlas_snr{int(snr)}_s{speaker}",
+                f"en_wake_snr{int(snr)}_s{speaker}",
                 f"noisy_snr{int(snr)}",
                 audio,
                 wake=True,
