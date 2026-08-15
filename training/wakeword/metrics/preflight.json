@@ -1,0 +1,36 @@
+{
+ "limits": {
+  "median_score": 0.2,
+  "fraction_over_0.5": 0.2,
+  "minimum_samples": 2000
+ },
+ "excluded_for_this_run": [],
+ "findings": [
+  {
+   "check": "coverage",
+   "category": "hard_negatives",
+   "samples": 16000,
+   "verdict": "ok"
+  },
+  {
+   "check": "coverage",
+   "category": "background",
+   "samples": 16000,
+   "verdict": "ok"
+  },
+  {
+   "check": "dry_run",
+   "category": "hard_negatives",
+   "median_score": 0.0017,
+   "fraction_over_0.5": 0.026,
+   "verdict": "ok"
+  },
+  {
+   "check": "dry_run",
+   "category": "background",
+   "median_score": 0.0025,
+   "fraction_over_0.5": 0.0013,
+   "verdict": "ok"
+  }
+ ]
+}
