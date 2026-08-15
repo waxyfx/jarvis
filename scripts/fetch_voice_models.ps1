@@ -9,11 +9,18 @@
 
     Everything here is local-inference only. No audio leaves the machine.
 
-    | Model                | Size   | Licence | Purpose                    |
-    |----------------------|--------|---------|----------------------------|
-    | silero_vad.onnx      | 2.2 MB | MIT     | Voice activity detection   |
-    | en_GB-alan-medium    |  60 MB | MIT     | English speech (Piper)     |
-    | ru_RU-dmitri-medium  |  60 MB | MIT     | Russian speech (Piper)     |
+    | Model                | Size   | Licence    | Purpose                 |
+    |----------------------|--------|------------|-------------------------|
+    | silero_vad.onnx      | 2.2 MB | MIT        | Voice activity detection|
+    | en_GB-alan-medium    |  60 MB | MIT        | English speech (Piper)  |
+    | ru_RU-dmitri-medium  |  60 MB | MIT        | Russian speech (Piper)  |
+    | melspectrogram.onnx  | 1.0 MB | Apache-2.0 | Wake-word features      |
+    | embedding_model.onnx | 1.3 MB | Apache-2.0 | Wake-word features      |
+    | hey_jarvis_v0.1.onnx | 1.2 MB | Apache-2.0 | Reference wake word     |
+
+    The hey_jarvis model is not the wake word ATLAS uses. It is a classifier
+    known to work, which is what proves the feature pipeline is correct
+    independently of any model trained here.
 
 .PARAMETER Force
     Re-download files that are already present.
@@ -74,6 +81,12 @@ foreach ($voice in $voices) {
             -Url "$piperBase/$($voice.Path)$extension" `
             -Destination (Join-Path $ModelDir "piper\$($voice.Name)$extension")
     }
+}
+
+Write-Step "openWakeWord feature stack"
+$owwBase = "https://github.com/dscripka/openWakeWord/releases/download/v0.5.1"
+foreach ($model in @("melspectrogram.onnx", "embedding_model.onnx", "hey_jarvis_v0.1.onnx")) {
+    Get-Model -Url "$owwBase/$model" -Destination (Join-Path $ModelDir "oww\$model")
 }
 
 Write-Host ""
