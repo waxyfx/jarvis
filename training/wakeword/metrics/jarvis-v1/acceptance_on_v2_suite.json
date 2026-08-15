@@ -1,0 +1,228 @@
+{
+ "model": "jarvis_v1.onnx",
+ "clips": 592,
+ "operating_points": [
+  {
+   "threshold": 0.1,
+   "detected": 89,
+   "of": 89,
+   "recall": 1.0,
+   "missed_percent": 0.0,
+   "false_windows": 265,
+   "false_activations_per_hour": 1088.94
+  },
+  {
+   "threshold": 0.2,
+   "detected": 89,
+   "of": 89,
+   "recall": 1.0,
+   "missed_percent": 0.0,
+   "false_windows": 234,
+   "false_activations_per_hour": 961.56
+  },
+  {
+   "threshold": 0.3,
+   "detected": 89,
+   "of": 89,
+   "recall": 1.0,
+   "missed_percent": 0.0,
+   "false_windows": 215,
+   "false_activations_per_hour": 883.48
+  },
+  {
+   "threshold": 0.4,
+   "detected": 89,
+   "of": 89,
+   "recall": 1.0,
+   "missed_percent": 0.0,
+   "false_windows": 201,
+   "false_activations_per_hour": 825.95
+  },
+  {
+   "threshold": 0.5,
+   "detected": 89,
+   "of": 89,
+   "recall": 1.0,
+   "missed_percent": 0.0,
+   "false_windows": 190,
+   "false_activations_per_hour": 780.75
+  },
+  {
+   "threshold": 0.6,
+   "detected": 89,
+   "of": 89,
+   "recall": 1.0,
+   "missed_percent": 0.0,
+   "false_windows": 179,
+   "false_activations_per_hour": 735.55
+  },
+  {
+   "threshold": 0.7,
+   "detected": 89,
+   "of": 89,
+   "recall": 1.0,
+   "missed_percent": 0.0,
+   "false_windows": 173,
+   "false_activations_per_hour": 710.89
+  },
+  {
+   "threshold": 0.8,
+   "detected": 89,
+   "of": 89,
+   "recall": 1.0,
+   "missed_percent": 0.0,
+   "false_windows": 157,
+   "false_activations_per_hour": 645.15
+  },
+  {
+   "threshold": 0.9,
+   "detected": 89,
+   "of": 89,
+   "recall": 1.0,
+   "missed_percent": 0.0,
+   "false_windows": 140,
+   "false_activations_per_hour": 575.29
+  },
+  {
+   "threshold": 0.95,
+   "detected": 89,
+   "of": 89,
+   "recall": 1.0,
+   "missed_percent": 0.0,
+   "false_windows": 116,
+   "false_activations_per_hour": 476.67
+  },
+  {
+   "threshold": 0.99,
+   "detected": 89,
+   "of": 89,
+   "recall": 1.0,
+   "missed_percent": 0.0,
+   "false_windows": 84,
+   "false_activations_per_hour": 345.17
+  }
+ ],
+ "by_group_at_threshold": {
+  "threshold": 0.5,
+  "groups": {
+   "background_noise": {
+    "clips": 120,
+    "clips_that_fired": 2,
+    "hours": 0.133,
+    "false_activations_per_hour": 97.5,
+    "median_peak": 0.0001
+   },
+   "background_speech_english": {
+    "clips": 4,
+    "clips_that_fired": 0,
+    "hours": 0.003,
+    "false_activations_per_hour": 0.0,
+    "median_peak": 0.0
+   },
+   "background_speech_russian": {
+    "clips": 4,
+    "clips_that_fired": 0,
+    "hours": 0.003,
+    "false_activations_per_hour": 0.0,
+    "median_peak": 0.0
+   },
+   "distance_far": {
+    "clips": 4,
+    "detected": 4,
+    "recall": 1.0,
+    "median_peak": 1.0
+   },
+   "distance_mid": {
+    "clips": 4,
+    "detected": 4,
+    "recall": 1.0,
+    "median_peak": 0.9999
+   },
+   "distance_near": {
+    "clips": 4,
+    "detected": 4,
+    "recall": 1.0,
+    "median_peak": 1.0
+   },
+   "loudness_loud": {
+    "clips": 4,
+    "detected": 4,
+    "recall": 1.0,
+    "median_peak": 1.0
+   },
+   "loudness_normal": {
+    "clips": 4,
+    "detected": 4,
+    "recall": 1.0,
+    "median_peak": 1.0
+   },
+   "loudness_quiet": {
+    "clips": 4,
+    "detected": 4,
+    "recall": 1.0,
+    "median_peak": 1.0
+   },
+   "near_miss_english": {
+    "clips": 195,
+    "clips_that_fired": 33,
+    "hours": 0.049,
+    "false_activations_per_hour": 2305.62,
+    "median_peak": 0.0002
+   },
+   "near_miss_russian": {
+    "clips": 180,
+    "clips_that_fired": 22,
+    "hours": 0.054,
+    "false_activations_per_hour": 1156.67,
+    "median_peak": 0.0002
+   },
+   "noisy_snr10": {
+    "clips": 4,
+    "detected": 4,
+    "recall": 1.0,
+    "median_peak": 1.0
+   },
+   "noisy_snr20": {
+    "clips": 4,
+    "detected": 4,
+    "recall": 1.0,
+    "median_peak": 1.0
+   },
+   "noisy_snr5": {
+    "clips": 4,
+    "detected": 4,
+    "recall": 1.0,
+    "median_peak": 1.0
+   },
+   "wake_word_english": {
+    "clips": 25,
+    "detected": 25,
+    "recall": 1.0,
+    "median_peak": 1.0
+   },
+   "wake_word_russian": {
+    "clips": 28,
+    "detected": 28,
+    "recall": 1.0,
+    "median_peak": 1.0
+   }
+  }
+ },
+ "latency_seconds": {
+  "measured_on": 89,
+  "median": 0.35,
+  "p90": 0.443,
+  "max": 0.501
+ },
+ "resources_while_listening": {
+  "audio_seconds_processed": 60,
+  "wall_seconds": 2.78,
+  "realtime_factor": 0.0464,
+  "cpu_percent_of_one_core": 58.7,
+  "rss_at_start_mb": 43.9,
+  "rss_after_loading_models_mb": 76.9,
+  "rss_after_listening_mb": 78.6,
+  "models_cost_mb": 33.0
+ },
+ "caveat": "Synthesised speech throughout. A synthesiser trained on read speech is not a person calling across a room; the owner's own recordings decide whether this is usable."
+}

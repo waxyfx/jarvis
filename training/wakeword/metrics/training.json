@@ -1,0 +1,183 @@
+{
+ "config": {
+  "training": {
+   "batch_size": 1024,
+   "epochs": 12,
+   "learning_rate": 0.001,
+   "weight_decay": 1e-05,
+   "positive_fraction": 0.25,
+   "negative_windows": null,
+   "seed": 20260815,
+   "thresholds": [
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8,
+    0.9,
+    0.95,
+    0.99
+   ]
+  },
+  "synthesis": {
+   "length_scale": [
+    0.75,
+    1.35
+   ],
+   "noise_scale": [
+    0.4,
+    0.9
+   ],
+   "noise_w": [
+    0.4,
+    1.1
+   ],
+   "positives_en": 11000,
+   "positives_ru": 11000,
+   "bare_fraction": 0.6,
+   "hard_negatives_en": 5000,
+   "hard_negatives_ru": 8000,
+   "isolated_en": 4000,
+   "isolated_ru": 5000,
+   "generic_en": 3000,
+   "generic_ru": 4000
+  },
+  "augmentation": {
+   "reverb_probability": 0.6,
+   "noise_probability": 0.8,
+   "snr_db": [
+    0.0,
+    25.0
+   ],
+   "gain_db": [
+    -22.0,
+    -3.0
+   ],
+   "word_end_fraction": [
+    0.72,
+    0.98
+   ]
+  }
+ },
+ "shapes": {
+  "positives": [
+   44000,
+   16,
+   96
+  ],
+  "hard_negatives": [
+   58000,
+   16,
+   96
+  ],
+  "background": [
+   18000,
+   16,
+   96
+  ],
+  "negatives": "(5625000, 16, 96) float16 (pre-cut windows) \u2248 2,000 h",
+  "negative_hours": 2000.0
+ },
+ "elapsed_seconds": 770.9,
+ "history": [
+  {
+   "epoch": 1,
+   "loss": 0.10481347436395784,
+   "threshold_at_1_fa_per_hour": 0.9984455704689026,
+   "recall_at_that_threshold": 0.08079545454545455,
+   "hard_negative_false_accepts": 0.0,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 2,
+   "loss": 0.03993686917548378,
+   "threshold_at_1_fa_per_hour": 0.9992856383323669,
+   "recall_at_that_threshold": 0.2747727272727273,
+   "hard_negative_false_accepts": 0.0011206896551724137,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 3,
+   "loss": 0.029817134741072854,
+   "threshold_at_1_fa_per_hour": 0.9991970658302307,
+   "recall_at_that_threshold": 0.405,
+   "hard_negative_false_accepts": 0.0020689655172413794,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 4,
+   "loss": 0.025604870434229574,
+   "threshold_at_1_fa_per_hour": 0.999506413936615,
+   "recall_at_that_threshold": 0.30022727272727273,
+   "hard_negative_false_accepts": 0.001379310344827586,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 5,
+   "loss": 0.022437757884617895,
+   "threshold_at_1_fa_per_hour": 0.9996553063392639,
+   "recall_at_that_threshold": 0.3465909090909091,
+   "hard_negative_false_accepts": 0.0007758620689655172,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 6,
+   "loss": 0.019690857736859472,
+   "threshold_at_1_fa_per_hour": 0.9988295435905457,
+   "recall_at_that_threshold": 0.4606818181818182,
+   "hard_negative_false_accepts": 0.0007758620689655172,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 7,
+   "loss": 0.018627896936765562,
+   "threshold_at_1_fa_per_hour": 0.9993085265159607,
+   "recall_at_that_threshold": 0.495,
+   "hard_negative_false_accepts": 0.003017241379310345,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 8,
+   "loss": 0.017625079279144605,
+   "threshold_at_1_fa_per_hour": 0.9992263317108154,
+   "recall_at_that_threshold": 0.5304545454545454,
+   "hard_negative_false_accepts": 0.0014655172413793104,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 9,
+   "loss": 0.016527098943479358,
+   "threshold_at_1_fa_per_hour": 0.9988541603088379,
+   "recall_at_that_threshold": 0.5147727272727273,
+   "hard_negative_false_accepts": 0.003706896551724138,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 10,
+   "loss": 0.014543379184712345,
+   "threshold_at_1_fa_per_hour": 0.9992271661758423,
+   "recall_at_that_threshold": 0.5942045454545455,
+   "hard_negative_false_accepts": 0.000689655172413793,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 11,
+   "loss": 0.013837900329381227,
+   "threshold_at_1_fa_per_hour": 0.9997665882110596,
+   "recall_at_that_threshold": 0.4823863636363636,
+   "hard_negative_false_accepts": 0.0011206896551724137,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 12,
+   "loss": 0.01355157076419952,
+   "threshold_at_1_fa_per_hour": 0.9995510578155518,
+   "recall_at_that_threshold": 0.5920454545454545,
+   "hard_negative_false_accepts": 0.0008620689655172414,
+   "background_false_accepts": 0.0
+  }
+ ]
+}
