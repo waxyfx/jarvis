@@ -32,6 +32,10 @@ secrets/
 # --- local dev tooling (reproduced by scripts/bootstrap_dev.ps1) ---
 .tools/
 .pgdata/
+# Voice models: fetched by scripts/fetch_voice_models.ps1, never committed.
+# They are large, they are not ours, and their licences travel with the
+# upstream projects rather than with this repository.
+.models/
 
 # --- python ---
 __pycache__/

@@ -14,6 +14,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+vad = [
+    "onnxruntime>=1.20 ; sys_platform == 'win32'",
+]
+tts = [
+    "piper-tts>=1.2 ; sys_platform == 'win32'",
+]
 # Engines live behind extras so the backend and the VPS never grow a machine
 # learning stack because the desktop grew a microphone. Each extra is added at
 # the sub-milestone that implements it, once it has been confirmed to install

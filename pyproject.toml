@@ -102,6 +102,11 @@ module = [
     "psutil.*",
     "pystray.*",
     "PIL.*",
+    # Voice engines. Inference runtimes and model wrappers, none of which ship
+    # type information.
+    "onnxruntime.*",
+    "piper.*",
+    "sounddevice.*",
 ]
 ignore_missing_imports = true
 

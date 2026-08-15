@@ -148,6 +148,33 @@ def frames_from_array(
         yield Frame(samples=chunk, started_at=start_at + offset / SAMPLE_RATE)
 
 
+def resample(samples: np.ndarray, *, from_rate: int, to_rate: int) -> np.ndarray:
+    """Change sample rate in the frequency domain.
+
+    Speech synthesisers emit 22.05 kHz and the pipeline runs at 16 kHz, so
+    something has to convert. Naive linear interpolation aliases high
+    frequencies down into the speech band, and while the VAD tolerated it here,
+    the recogniser is exactly the sort of consumer that would not. Truncating
+    the spectrum instead is a hard low-pass and costs nothing at these sizes.
+    """
+    if from_rate == to_rate:
+        return samples.astype(np.float32, copy=False)
+    if from_rate <= 0 or to_rate <= 0:
+        raise ValueError("sample rates must be positive")
+    if len(samples) == 0:
+        return samples.astype(np.float32, copy=False)
+
+    source_length = len(samples)
+    target_length = round(source_length * to_rate / from_rate)
+    spectrum = np.fft.rfft(samples.astype(np.float64))
+    resampled = np.zeros(target_length // 2 + 1, dtype=complex)
+    keep = min(len(spectrum), len(resampled))
+    resampled[:keep] = spectrum[:keep]
+    return (np.fft.irfft(resampled, target_length) * (target_length / source_length)).astype(
+        np.float32
+    )
+
+
 def read_wav(path: Path | str) -> np.ndarray:
     """Read a mono 16 kHz WAV into float32.
 
