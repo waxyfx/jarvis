@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -80,9 +81,24 @@ def trim_silence(audio: np.ndarray, *, threshold: float = 0.01) -> np.ndarray:
     return audio[loud[0] : loud[-1] + 1]
 
 
+def mixer(
+    bare: tuple[str, ...], contextual: tuple[str, ...], fraction: float
+) -> Callable[[random.Random], tuple[str, ...]]:
+    """Draw from ``bare`` with probability ``fraction``, otherwise ``contextual``.
+
+    Weighting matters here and a single combined tuple would get it wrong. With
+    five bare phrases and ten contextual ones, uniform choice would make the
+    bare call a third of the set; calling the assistant by name alone is the
+    main case and keeps the majority.
+    """
+    if not contextual:
+        return lambda _: bare
+    return lambda rng: bare if rng.random() < fraction else contextual
+
+
 def generate(
     *,
-    texts: tuple[str, ...],
+    pick: Callable[[random.Random], tuple[str, ...]],
     count: int,
     language: str,
     voices: tuple[str, ...],
@@ -99,7 +115,7 @@ def generate(
     for index in tqdm(range(count), desc=label, unit="clip"):
         voice_name = rng.choice(voices)
         speaker = rng.randrange(speaker_count) if speaker_count else None
-        text = rng.choice(texts)
+        text = rng.choice(pick(rng))
         tuning = CONFIG.synthesis
         length_scale = rng.uniform(*tuning.length_scale)
 
@@ -150,41 +166,75 @@ def main() -> int:
     def scaled(n: int) -> int:
         return max(1, round(n * arguments.scale))
 
+    english = ((voices.english_multispeaker,), voices.english_speaker_count)
+    russian = (voices.russian, None)
+
+    def fixed(texts: tuple[str, ...]) -> Callable[[random.Random], tuple[str, ...]]:
+        return lambda _: texts
+
     groups = [
         (
             "positive_en",
-            phrases.positive_en,
+            mixer(phrases.positive_en, phrases.contextual_en, tuning.bare_fraction),
             scaled(tuning.positives_en),
             "en",
-            (voices.english_multispeaker,),
-            voices.english_speaker_count,
+            *english,
             True,
         ),
         (
             "positive_ru",
-            phrases.positive_ru,
+            mixer(phrases.positive_ru, phrases.contextual_ru, tuning.bare_fraction),
             scaled(tuning.positives_ru),
             "ru",
-            voices.russian,
-            None,
+            *russian,
             True,
         ),
         (
             "negative_en",
-            phrases.hard_negative_en,
+            fixed(phrases.hard_negative_en),
             scaled(tuning.hard_negatives_en),
             "en",
-            (voices.english_multispeaker,),
-            voices.english_speaker_count,
+            *english,
             False,
         ),
         (
             "negative_ru",
-            phrases.hard_negative_ru,
+            fixed(phrases.hard_negative_ru),
             scaled(tuning.hard_negatives_ru),
             "ru",
-            voices.russian,
-            None,
+            *russian,
+            False,
+        ),
+        (
+            "isolated_en",
+            fixed(phrases.isolated_en),
+            scaled(tuning.isolated_en),
+            "en",
+            *english,
+            False,
+        ),
+        (
+            "isolated_ru",
+            fixed(phrases.isolated_ru),
+            scaled(tuning.isolated_ru),
+            "ru",
+            *russian,
+            False,
+        ),
+        (
+            "generic_en",
+            fixed(phrases.generic_en),
+            scaled(tuning.generic_en),
+            "en",
+            *english,
+            False,
+        ),
+        (
+            "generic_ru",
+            fixed(phrases.generic_ru),
+            scaled(tuning.generic_ru),
+            "ru",
+            *russian,
             False,
         ),
     ]
@@ -200,7 +250,7 @@ def main() -> int:
         manifest.extend(kept)
         print(f"keeping {len(kept)} clips from groups outside {sorted(wanted)}")
 
-    for name, texts, count, language, voice_names, speakers, positive in groups:
+    for name, pick, count, language, voice_names, speakers, positive in groups:
         if wanted and name not in wanted:
             continue
         # A regenerated group must not inherit stragglers from the old one: a
@@ -212,7 +262,7 @@ def main() -> int:
                 leftover.unlink()
 
         samples = generate(
-            texts=texts,
+            pick=pick,
             count=count,
             language=language,
             voices=voice_names,

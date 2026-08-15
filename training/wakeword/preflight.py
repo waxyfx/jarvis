@@ -115,6 +115,67 @@ def load(name: str, limit: int) -> np.ndarray | None:
     return np.array(np.load(path, mmap_mode="r")[:limit], dtype=np.float32)
 
 
+#: How far the positive and negative clip-duration distributions may drift
+#: apart. Duration is the easiest thing for a model to learn instead of a word,
+#: and both v1 and the first v2 draft got it wrong in opposite directions.
+DURATION_RATIO_LIMIT = 1.6
+
+
+def shape_check(sample_per_group: int = 400) -> list[dict[str, object]]:
+    """Is clip *duration* a cue for the label?
+
+    v1's positives were all short isolated words; adding contextual positives
+    to fix that made them all longer than the negatives instead. Either way the
+    model can learn duration rather than the word. This compares the two medians
+    and complains when they diverge, which is cheap and catches the mistake in
+    both directions.
+    """
+    import json as _json
+    import random
+
+    from atlas_voice.audio import SAMPLE_RATE, read_wav
+
+    manifest_path = CONFIG.clips_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return []
+
+    entries = _json.loads(manifest_path.read_text(encoding="utf-8"))
+    rng = random.Random(0)
+    durations: dict[bool, list[float]] = {True: [], False: []}
+    for positive in (True, False):
+        chosen = [entry for entry in entries if entry["positive"] is positive]
+        rng.shuffle(chosen)
+        for entry in chosen[:sample_per_group]:
+            try:
+                audio = read_wav(CONFIG.clips_dir / str(entry["path"]))
+            except (OSError, ValueError):
+                continue
+            durations[positive].append(len(audio) / SAMPLE_RATE)
+
+    if not durations[True] or not durations[False]:
+        return []
+
+    positive_median = float(np.median(durations[True]))
+    negative_median = float(np.median(durations[False]))
+    ratio = max(positive_median, negative_median) / max(min(positive_median, negative_median), 1e-6)
+    bad = ratio > DURATION_RATIO_LIMIT
+    print(
+        f"  shape     {'duration':16} positives={positive_median:.2f}s  "
+        f"negatives={negative_median:.2f}s  ratio={ratio:.2f}  "
+        f"{'SKEWED' if bad else 'ok'}"
+    )
+    return [
+        {
+            "check": "shape",
+            "metric": "clip_duration_median_s",
+            "positive": round(positive_median, 3),
+            "negative": round(negative_median, 3),
+            "ratio": round(ratio, 3),
+            "verdict": "SKEWED" if bad else "ok",
+        }
+    ]
+
+
 def check(
     *, skip_corpus: bool = False, exclude: tuple[str, ...] = ()
 ) -> tuple[bool, list[dict[str, object]]]:
@@ -152,6 +213,11 @@ def check(
 
     if failed:
         return False, findings
+
+    # ---- shape ----------------------------------------------------------
+    shape = shape_check()
+    findings.extend(shape)
+    failed = failed or any(entry["verdict"] == "SKEWED" for entry in shape)
 
     # ---- dry run of the real mix ----------------------------------------
     parts = list(categories.values())

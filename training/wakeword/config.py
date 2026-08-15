@@ -68,9 +68,49 @@ class Phrases:
     class of collision entirely.
     """
 
-    #: Said alone, as a person summoning an assistant does.
-    positive_en: tuple[str, ...] = ("Jarvis", "Jarvis.", "Jarvis?", "Hey Jarvis")
-    positive_ru: tuple[str, ...] = ("Джарвис", "Джарвис.", "Джарвис?", "Эй, Джарвис")
+    #: Said alone, as a person summoning an assistant does. This stays the main
+    #: case and keeps the larger share of the positives.
+    positive_en: tuple[str, ...] = ("Jarvis", "Jarvis.", "Jarvis?", "Hey Jarvis", "OK Jarvis")
+    positive_ru: tuple[str, ...] = (
+        "Джарвис",
+        "Джарвис.",
+        "Джарвис?",
+        "Эй, Джарвис",
+        "Окей, Джарвис",
+    )
+
+    #: The wake word with a command attached, which is how it is usually said
+    #: once someone is used to the assistant.
+    #:
+    #: v1 had none of these, and paid for it. Every positive was a short word
+    #: alone in silence, so *being a short word alone in silence* became part of
+    #: what the model recognised. Measured: «Дарвин» said alone scored 0.998,
+    #: and «Дарвин был натуралистом» scored 0.0000 — the same word, and the only
+    #: difference is whether anything surrounded it.
+    contextual_en: tuple[str, ...] = (
+        "Jarvis, open Chrome",
+        "Jarvis, what time is it?",
+        "Hey Jarvis, what time is it?",
+        "Jarvis, close Notepad",
+        "Jarvis, show me memory usage",
+        "Jarvis, are you there?",
+        "Hey Jarvis, open the second document",
+        "Jarvis, how much disk space is left?",
+        "So I asked Jarvis to do it",
+        "Jarvis, never mind",
+    )
+    contextual_ru: tuple[str, ...] = (
+        "Джарвис, открой Chrome",
+        "Джарвис, который час?",
+        "Джарвис, закрой блокнот",
+        "Джарвис, покажи использование памяти",
+        "Эй, Джарвис, ты здесь?",
+        "Джарвис, сколько осталось места на диске",
+        "Джарвис, открой второй документ",
+        "Я попросил Джарвиса это сделать",
+        "Джарвис, отбой",
+        "Джарвис, повтори ещё раз",
+    )
 
     @property
     def spoken_en(self) -> str:
@@ -95,6 +135,10 @@ class Phrases:
     #: unremarkable in ordinary speech, at conversational speed and prosody. A
     #: name is most often misheard *inside* a sentence, not in isolation, so the
     #: list carries both.
+    #: Extended in v2 from the model's own false positives rather than from
+    #: guesswork. "Jargon" scored 0.998, "starve us" 0.998 and "Jervis" 0.755
+    #: against v1, so their families are covered properly here. Guessing which
+    #: words collide is much worse than asking the model which ones did.
     hard_negative_en: tuple[str, ...] = (
         # Bare near-misses.
         "Travis",
@@ -105,6 +149,23 @@ class Phrases:
         "Jargon",
         "Carve",
         "Harvest",
+        # The v1 false positives, and their neighbours.
+        "Jarring",
+        "Jarred",
+        "Charging",
+        "Garden",
+        "Guarding",
+        "Carbon",
+        "Pardon",
+        "Bargain",
+        "Starve",
+        "Starving",
+        "Carving",
+        "Marvin",
+        "Marvel",
+        "Harbour",
+        "Java",
+        "Jarvis Cocker sang it",
         # The same sounds inside ordinary sentences.
         "Java is running on the server",
         "The service is available again",
@@ -116,13 +177,163 @@ class Phrases:
         "Harvey asked about the harvest",
         "That is a lot of jargon for one page",
         "Could you carve out an hour tomorrow",
+        "The garden needs weeding this weekend",
+        "I beg your pardon, what was that?",
+        "Marvin is guarding the door",
+        "That was quite a bargain",
+        "The carbon figures came in low",
+    )
+
+    #: Ordinary short words, unrelated to the wake word phonetically. Their only
+    #: job is to make "a short word alone in silence" uninformative — the shape
+    #: v1 learned instead of the word. Against twenty-four thousand isolated
+    #: positives, v1 had about a dozen isolated negatives; the imbalance was the
+    #: defect.
+    isolated_en: tuple[str, ...] = (
+        "House",
+        "Table",
+        "Water",
+        "Light",
+        "Night",
+        "Morning",
+        "Friend",
+        "Hand",
+        "Book",
+        "City",
+        "Time",
+        "Music",
+        "Coffee",
+        "Window",
+        "Door",
+        "Chair",
+        "Phone",
+        "Money",
+        "Winter",
+        "Summer",
+        "Answer",
+        "Question",
+        "Number",
+        "Picture",
+        "Letter",
+        "Market",
+        "Doctor",
+        "Teacher",
+        "Mother",
+        "Father",
+        "Yellow",
+        "Purple",
+        "Simple",
+        "Better",
+        "Under",
+        "Over",
+        "After",
+        "Never",
+        "Always",
+        "Maybe",
+        "Really",
+        "Almost",
+        "Enough",
+        "Perfect",
+        "Thank you",
+        "Excuse me",
+        "Of course",
+        "All right",
+        "One moment",
+    )
+    #: Ordinary conversation, phonetically unrelated to the wake word. Two jobs.
+    #: It teaches that everyday speech is not a summons — and it balances clip
+    #: length, which the isolated words alone would skew.
+    #:
+    #: Measured on a v2 smoke run before this list existed: positives had a
+    #: median duration of 1.09 s (English) and 1.43 s (Russian) against 0.49–0.80 s
+    #: for every negative group. Adding contextual positives had fixed "positives
+    #: are always short" by creating "positives are always long". Duration must
+    #: not be a cue in either direction.
+    generic_en: tuple[str, ...] = (
+        "Could you open the second document and check the totals please",
+        "I was thinking we should leave before the traffic gets bad",
+        "The meeting has been moved to Thursday afternoon",
+        "There is a package waiting downstairs for you",
+        "It rained all morning and then cleared up",
+        "Let me know when you have finished reading it",
+        "The train arrives at half past seven",
+        "We should probably order something to eat",
+        "I left my keys on the kitchen table again",
+        "That film was longer than I expected",
+    )
+    generic_ru: tuple[str, ...] = (
+        "Мне кажется, нам стоит выехать пораньше, пока нет пробок",
+        "Совещание перенесли на четверг, и это всех устраивает",
+        "Внизу тебя ждёт посылка",
+        "Дождь шёл всё утро, а потом прояснилось",
+        "Дай знать, когда закончишь читать",
+        "Поезд приходит в половине восьмого",
+        "Наверное, стоит заказать что-нибудь поесть",
+        "Я снова забыл ключи на кухонном столе",
+        "Фильм оказался длиннее, чем я думал",
+        "Завтра обещали хорошую погоду",
+    )
+
+    isolated_ru: tuple[str, ...] = (
+        "Дом",
+        "Стол",
+        "Вода",
+        "Свет",
+        "Ночь",
+        "Утро",
+        "Друг",
+        "Рука",
+        "Книга",
+        "Город",
+        "Время",
+        "Музыка",
+        "Кофе",
+        "Окно",
+        "Дверь",
+        "Стул",
+        "Телефон",
+        "Деньги",
+        "Зима",
+        "Лето",
+        "Ответ",
+        "Вопрос",
+        "Номер",
+        "Картина",
+        "Письмо",
+        "Рынок",
+        "Доктор",
+        "Учитель",
+        "Мама",
+        "Папа",
+        "Жёлтый",
+        "Синий",
+        "Простой",
+        "Лучше",
+        "Под",
+        "Над",
+        "После",
+        "Никогда",
+        "Всегда",
+        "Может",
+        "Правда",
+        "Почти",
+        "Хватит",
+        "Отлично",
+        "Спасибо",
+        "Извините",
+        "Конечно",
+        "Хорошо",
+        "Минуту",
+        "Погоди",
     )
     #: The Russian list is longer because Russian carries the one genuinely
     #: dangerous neighbour: «сервис» is /sʲerˈvʲis/ against /dʒarˈvʲis/, sharing
     #: the stressed vowel and the whole «-рвис» ending. Everything else here is
     #: a softer collision on «джа-», «-ар-» or «-ис».
     hard_negative_ru: tuple[str, ...] = (
-        # Bare near-misses.
+        # Bare near-misses. Every one of these fired against v1 at 0.93–0.9997
+        # *while already being in its training set* — which is why v2 attacks
+        # the shape rather than simply repeating the list.
         "Сервис",
         "Сервиз",
         "Дарвин",
@@ -135,6 +346,23 @@ class Phrases:
         "Барвинок",
         "Нарвис",
         "Гарвард",
+        # Neighbours of the words that fired.
+        "Джазмен",
+        "Джанго",
+        "Джарра",
+        "Жарко",
+        "Жаркое",
+        "Шарик",
+        "Шарить",
+        "Шарнир",
+        "Дарвинизм",
+        "Гарнир",
+        "Карвинг",
+        "Марвин",
+        "Арбуз",
+        "Барвиха",
+        "Тарелка",
+        "Фарватер",
         # The same sounds inside ordinary sentences.
         "В сервисе произошла ошибка",
         "Сервис снова доступен",
@@ -148,6 +376,11 @@ class Phrases:
         "Я забыл шарф в Париже",
         "В Париже было дождливо",
         "Гарвардский курс начинается осенью",
+        "Джаз играл до самого утра",
+        "Шарф висел на вешалке",
+        "Дарвин описал этот вид",
+        "На гарнир возьму рис",
+        "Марвин ждал у входа",
     )
 
 
@@ -168,12 +401,22 @@ class Synthesis:
     #: Phoneme duration randomness, widened from its 0.8 default.
     noise_w: tuple[float, float] = (0.4, 1.1)
 
-    positives_en: int = 12_000
-    positives_ru: int = 12_000
-    hard_negatives_en: int = 4_000
-    #: Raised in v2: the Russian near-miss list roughly tripled, and thinning
-    #: the samples per phrase would have undone the point of adding them.
-    hard_negatives_ru: int = 9_000
+    positives_en: int = 11_000
+    positives_ru: int = 11_000
+    #: How many positives are the bare word rather than a whole command. Calling
+    #: the assistant by name alone stays the main case, so it keeps the majority
+    #: — but not the whole set, which is what taught v1 to recognise isolation.
+    bare_fraction: float = 0.6
+
+    hard_negatives_en: int = 5_000
+    #: Russian carries more of the collisions and more of the v1 failures.
+    hard_negatives_ru: int = 8_000
+    #: Ordinary short words, to make "short word alone" uninformative.
+    isolated_en: int = 4_000
+    isolated_ru: int = 5_000
+    #: Ordinary sentences, to keep clip length uninformative in both directions.
+    generic_en: int = 3_000
+    generic_ru: int = 4_000
 
 
 @dataclass(frozen=True)
@@ -199,7 +442,7 @@ class Background:
     #: Windows of background with no speech at all. Roughly a third of the
     #: positive count, which is enough for the noise to be uninformative
     #: without swamping the near-misses.
-    count: int = 16_000
+    count: int = 18_000
     #: How that count is split. Digital silence is included because a
     #: microphone in a quiet room is the single most common thing ATLAS will
     #: ever hear, and "never fires on nothing" should be trained, not assumed.
@@ -291,9 +534,13 @@ class Config:
     def features_dir(self) -> Path:
         return WORK / "features"
 
+    #: Bumped per training run, so a new run cannot quietly overwrite the model
+    #: an earlier acceptance report describes. metrics/jarvis-v1/ documents v1.
+    version: str = "v2"
+
     @property
     def output_model(self) -> Path:
-        return MODELS / "oww" / "jarvis_v1.onnx"
+        return MODELS / "oww" / f"jarvis_{self.version}.onnx"
 
     @property
     def metrics_dir(self) -> Path:

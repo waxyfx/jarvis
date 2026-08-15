@@ -19,14 +19,6 @@
    "verdict": "ok"
   },
   {
-   "check": "shape",
-   "metric": "clip_duration_median_s",
-   "positive": 0.904,
-   "negative": 0.657,
-   "ratio": 1.376,
-   "verdict": "ok"
-  },
-  {
    "check": "dry_run",
    "category": "hard_negatives",
    "median_score": 0.0017,
