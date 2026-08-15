@@ -130,7 +130,16 @@ def main() -> int:
     parser.add_argument(
         "--scale", type=float, default=1.0, help="fraction of the configured counts"
     )
+    parser.add_argument(
+        "--only",
+        default="",
+        help=(
+            "comma-separated groups to regenerate (e.g. negative_ru); every other "
+            "group is kept from the existing manifest instead of being resynthesised"
+        ),
+    )
     arguments = parser.parse_args()
+    wanted = {name.strip() for name in arguments.only.split(",") if name.strip()}
 
     rng = random.Random(CONFIG.training.seed)
     load = _voice_loader()
@@ -181,7 +190,27 @@ def main() -> int:
     ]
 
     manifest: list[dict[str, object]] = []
+    existing_path = CONFIG.clips_dir / "manifest.json"
+    if wanted and existing_path.is_file():
+        kept = [
+            entry
+            for entry in json.loads(existing_path.read_text(encoding="utf-8"))
+            if entry["group"] not in wanted
+        ]
+        manifest.extend(kept)
+        print(f"keeping {len(kept)} clips from groups outside {sorted(wanted)}")
+
     for name, texts, count, language, voice_names, speakers, positive in groups:
+        if wanted and name not in wanted:
+            continue
+        # A regenerated group must not inherit stragglers from the old one: a
+        # shorter list would leave clips the manifest no longer mentions, and a
+        # longer one would mix two vocabularies under a single label.
+        stale = CONFIG.clips_dir / name
+        if stale.is_dir():
+            for leftover in stale.glob("*.wav"):
+                leftover.unlink()
+
         samples = generate(
             texts=texts,
             count=count,

@@ -199,6 +199,45 @@ def augment(
     return np.clip(audio, -1.0, 1.0)
 
 
+def background_window(
+    *, rng: random.Random, impulses: list[np.ndarray], noises: list[np.ndarray]
+) -> np.ndarray:
+    """Audio made only of the things used to augment positives — no word.
+
+    The whole point: whatever a positive is dressed in, a negative must be
+    dressed in too. Without this the dressing becomes the signal.
+    """
+    settings = CONFIG.background
+    roll = rng.random()
+
+    if roll < settings.silence_fraction:
+        # Not literally zeros: a real microphone in a quiet room still has a
+        # noise floor, and a model trained on digital silence has not learned
+        # anything about quiet rooms.
+        audio = (
+            np.random.default_rng(rng.randrange(2**31)).standard_normal(CLIP_SAMPLES) * 1e-4
+        ).astype(np.float32)
+        return audio
+
+    if roll < settings.silence_fraction + settings.quiet_noise_fraction:
+        level = rng.uniform(0.001, 0.02)
+        base = rng.choice(noises) if noises else np.zeros(CLIP_SAMPLES, dtype=np.float32)
+        audio = base[:CLIP_SAMPLES] * (level / max(float(np.abs(base).max()), 1e-9))
+        return audio.astype(np.float32)
+
+    audio = (rng.choice(noises) if noises else np.zeros(CLIP_SAMPLES, dtype=np.float32))[
+        :CLIP_SAMPLES
+    ].astype(np.float32)
+    if impulses and rng.random() < 0.5:
+        audio = reverberate(audio, rng.choice(impulses))
+
+    target = 10 ** (rng.uniform(*CONFIG.augmentation.gain_db) / 20)
+    peak = float(np.abs(audio).max())
+    if peak > 0:
+        audio = (audio / peak * target).astype(np.float32)
+    return np.clip(audio, -1.0, 1.0)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--noise-segments", type=int, default=1500)
@@ -208,7 +247,16 @@ def main() -> int:
         default=2,
         help="augmented copies per clip; each is a different room and noise",
     )
+    parser.add_argument(
+        "--only",
+        default="",
+        help="comma-separated outputs to rebuild: positives, hard, background",
+    )
     arguments = parser.parse_args()
+    wanted = {name.strip() for name in arguments.only.split(",") if name.strip()}
+    unknown = wanted - {"positives", "hard", "background"}
+    if unknown:
+        parser.error(f"unknown output(s): {sorted(unknown)}")
 
     rng = random.Random(CONFIG.training.seed + 1)
     manifest = json.loads((CONFIG.clips_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -225,6 +273,8 @@ def main() -> int:
     CONFIG.features_dir.mkdir(parents=True, exist_ok=True)
 
     for positive in (True, False):
+        if wanted and ("positives" if positive else "hard") not in wanted:
+            continue
         entries = [entry for entry in manifest if entry["positive"] is positive]
         collected = np.empty(
             (len(entries) * arguments.variants, CLF_WINDOW, EMBEDDING_SIZE), dtype=np.float32
@@ -244,6 +294,18 @@ def main() -> int:
         destination = CONFIG.features_dir / ("positives.npy" if positive else "hard_negatives.npy")
         np.save(destination, collected[:written])
         print(f"    {destination.name}: {written} samples")
+
+    if wanted and "background" not in wanted:
+        return 0
+
+    count = CONFIG.background.count
+    background = np.empty((count, CLF_WINDOW, EMBEDDING_SIZE), dtype=np.float32)
+    for index in tqdm(range(count), desc="background", unit="window"):
+        background[index] = stack.window_for(
+            background_window(rng=rng, impulses=impulses, noises=noises)
+        )
+    np.save(CONFIG.features_dir / "background.npy", background)
+    print(f"    background.npy: {count} samples")
 
     return 0
 

@@ -79,6 +79,14 @@ class Phrases:
         "That last one",
         "Add less salt",
     )
+    #: The Russian list is longer than the English one because Russian is where
+    #: the collisions live. The v1 model fired at 1.00 on «Класс» — /klas/
+    #: against /atləs/, sharing the stressed vowel and the final consonant
+    #: cluster — so that family is now covered properly rather than by one
+    #: token. «Атлас мира» and «Географический атлас» also fired, and always
+    #: will: they contain the wake word. Keeping them here teaches the model
+    #: the *surrounding* words are not part of it, which is the most that can
+    #: be done acoustically.
     hard_negative_ru: tuple[str, ...] = (
         "Атласные ткани",
         "Атлас мира лежал на столе",
@@ -86,9 +94,30 @@ class Phrases:
         "Атлант расправил плечи",
         "Географический атлас",
         "Атласный бант",
-        "Класс",
         "Ананас",
         "Он летал в Атланту",
+        # The «класс» family, which v1 got wrong.
+        "Класс",
+        "Классно",
+        "Классный",
+        "Классика",
+        "Первый класс",
+        "Мастер-класс",
+        "Весь класс собрался",
+        "Классное решение",
+        # Other words that share the stressed /a/ and a final /s/ or /l/.
+        "Палас",
+        "Компас",
+        "Балласт",
+        "Атлет",
+        "Салат",
+        "Алмаз",
+        "Далласа",
+        "Аванс",
+        "Баланс",
+        "Гладкий",
+        "Плащ",
+        "Ласточка",
     )
 
 
@@ -112,7 +141,42 @@ class Synthesis:
     positives_en: int = 12_000
     positives_ru: int = 12_000
     hard_negatives_en: int = 4_000
-    hard_negatives_ru: int = 4_000
+    #: Raised in v2: the Russian near-miss list roughly tripled, and thinning
+    #: the samples per phrase would have undone the point of adding them.
+    hard_negatives_ru: int = 9_000
+
+
+@dataclass(frozen=True)
+class Background:
+    """Negatives made of the augmentation itself, with no word in them.
+
+    This class exists because v1 did not have it. Every noise clip and every
+    room used to make a positive sound realistic appeared *only* inside
+    positives, and never in the five million published negatives. Within the
+    subpopulation of "audio containing this noise corpus", positives dominated —
+    so the model learned that the noise corpus was evidence for the wake word,
+    and fired 14 985 times an hour on plain street recordings.
+
+    The rule that follows, and which :mod:`preflight` now enforces:
+
+        **Every augmentation applied to a positive must also appear, in
+        comparable proportion, in audio labelled negative.**
+
+    Otherwise the augmentation stops being a nuisance the model must see past
+    and becomes a feature it can use.
+    """
+
+    #: Windows of background with no speech at all. Roughly a third of the
+    #: positive count, which is enough for the noise to be uninformative
+    #: without swamping the near-misses.
+    count: int = 16_000
+    #: How that count is split. Digital silence is included because a
+    #: microphone in a quiet room is the single most common thing ATLAS will
+    #: ever hear, and "never fires on nothing" should be trained, not assumed.
+    silence_fraction: float = 0.10
+    quiet_noise_fraction: float = 0.20
+    #: The rest is the recorded corpus at ordinary levels, half of it
+    #: reverberated with the same rooms the positives use.
 
 
 @dataclass(frozen=True)
@@ -166,6 +230,7 @@ class Config:
     phrases: Phrases = field(default_factory=Phrases)
     synthesis: Synthesis = field(default_factory=Synthesis)
     augmentation: Augmentation = field(default_factory=Augmentation)
+    background: Background = field(default_factory=Background)
     training: Training = field(default_factory=Training)
 
     @property

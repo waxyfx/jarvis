@@ -187,12 +187,22 @@ def main() -> int:
             "full corpus, and the resulting metrics are not comparable to a full run"
         )
 
+    # The check that would have caught v1. Run before anything expensive, and
+    # not optional: forgetting it is exactly how the first model was trained.
+    import preflight
+
+    print("==> preflight")
+    if preflight.main() != 0:
+        return 1
+
     positives = np.load(CONFIG.features_dir / "positives.npy")
     hard = np.load(CONFIG.features_dir / "hard_negatives.npy")
+    background = np.load(CONFIG.features_dir / "background.npy")
     negatives = NegativePool(CONFIG.negative_features, limit=arguments.negative_limit)
     validation = NegativePool(CONFIG.validation_features)
     print(f"    positives      {positives.shape}")
     print(f"    hard negatives {hard.shape}")
+    print(f"    background     {background.shape}")
     print(f"    negatives      {negatives.describe()}")
     print(f"    validation     {validation.describe()}")
 
@@ -203,6 +213,9 @@ def main() -> int:
     train_positives, held_positives = positives[:split], positives[split:]
     hard_split = int(len(hard) * 0.8)
     train_hard, held_hard = hard[:hard_split], hard[hard_split:]
+    background_split = int(len(background) * 0.8)
+    train_background = background[:background_split]
+    held_background = background[background_split:]
 
     model = WakeWordClassifier()
     optimiser = torch.optim.AdamW(
@@ -212,7 +225,14 @@ def main() -> int:
 
     positives_per_batch = int(settings.batch_size * settings.positive_fraction)
     hard_per_batch = int(settings.batch_size * 0.15)
-    easy_per_batch = settings.batch_size - positives_per_batch - hard_per_batch
+    # Background gets its own share rather than being folded into the easy
+    # negatives. It is the augmentation the positives are wearing, and the model
+    # has to see it worn by something that is not the wake word in every batch,
+    # not occasionally.
+    background_per_batch = int(settings.batch_size * 0.15)
+    easy_per_batch = (
+        settings.batch_size - positives_per_batch - hard_per_batch - background_per_batch
+    )
 
     history: list[dict[str, float]] = []
     best_recall = -1.0
@@ -225,14 +245,13 @@ def main() -> int:
         for _ in range(arguments.steps_per_epoch):
             pos = train_positives[rng.integers(0, len(train_positives), positives_per_batch)]
             hrd = train_hard[rng.integers(0, len(train_hard), hard_per_batch)]
-            # Sorting the scattered indices turns random access into something
-            # closer to a sequential read of the memory map.
+            bkg = train_background[rng.integers(0, len(train_background), background_per_batch)]
             easy = negatives.sample(rng, easy_per_batch)
 
-            features = np.concatenate([pos, hrd, easy]).astype(np.float32)
-            labels = np.concatenate([np.ones(len(pos)), np.zeros(len(hrd) + len(easy))]).astype(
-                np.float32
-            )
+            features = np.concatenate([pos, hrd, bkg, easy]).astype(np.float32)
+            labels = np.concatenate(
+                [np.ones(len(pos)), np.zeros(len(hrd) + len(bkg) + len(easy))]
+            ).astype(np.float32)
 
             optimiser.zero_grad()
             logits = model(torch.from_numpy(features)).squeeze(-1)
@@ -253,6 +272,9 @@ def main() -> int:
         threshold = threshold_for_rate(negative_scores, 1 / 45_000)
         recall = float((held_scores >= threshold).mean())
         hard_fa = false_accept_rate(hard_scores, threshold)
+        # Reported every epoch because it is the number v1 got catastrophically
+        # wrong while every other figure looked healthy.
+        background_fa = false_accept_rate(score_all(model, held_background), threshold)
 
         record = {
             "epoch": epoch,
@@ -260,15 +282,19 @@ def main() -> int:
             "threshold_at_1_fa_per_hour": threshold,
             "recall_at_that_threshold": recall,
             "hard_negative_false_accepts": hard_fa,
+            "background_false_accepts": background_fa,
         }
         history.append(record)
         print(
-            f"    epoch {epoch:2}  loss {record['loss']:.4f}  "
-            f"thr {threshold:.4f}  recall {recall:.3f}  hard-FA {hard_fa:.4f}"
+            f"    epoch {epoch:2}  loss {record['loss']:.4f}  thr {threshold:.4f}  "
+            f"recall {recall:.3f}  hard-FA {hard_fa:.4f}  bg-FA {background_fa:.4f}",
+            flush=True,
         )
 
-        # Recall at a fixed false-accept rate, with near-misses breaking ties.
-        score = recall - hard_fa
+        # Recall at a fixed false-accept rate, with near-misses and background
+        # breaking ties. Background is weighted heavily: a model that wakes on
+        # street noise is unusable however well it hears the word.
+        score = recall - hard_fa - 2.0 * background_fa
         if score > best_recall:
             best_recall = score
             best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
@@ -306,6 +332,7 @@ def main() -> int:
                 "shapes": {
                     "positives": list(positives.shape),
                     "hard_negatives": list(hard.shape),
+                    "background": list(background.shape),
                     "negatives": negatives.describe(),
                     "negative_hours": round(negatives.hours, 1),
                 },
