@@ -1,0 +1,178 @@
+{
+ "config": {
+  "training": {
+   "batch_size": 1024,
+   "epochs": 12,
+   "learning_rate": 0.001,
+   "weight_decay": 1e-05,
+   "positive_fraction": 0.25,
+   "negative_windows": null,
+   "seed": 20260815,
+   "thresholds": [
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8,
+    0.9,
+    0.95,
+    0.99
+   ]
+  },
+  "synthesis": {
+   "length_scale": [
+    0.75,
+    1.35
+   ],
+   "noise_scale": [
+    0.4,
+    0.9
+   ],
+   "noise_w": [
+    0.4,
+    1.1
+   ],
+   "positives_en": 12000,
+   "positives_ru": 12000,
+   "hard_negatives_en": 4000,
+   "hard_negatives_ru": 9000
+  },
+  "augmentation": {
+   "reverb_probability": 0.6,
+   "noise_probability": 0.8,
+   "snr_db": [
+    0.0,
+    25.0
+   ],
+   "gain_db": [
+    -22.0,
+    -3.0
+   ],
+   "word_end_fraction": [
+    0.72,
+    0.98
+   ]
+  }
+ },
+ "shapes": {
+  "positives": [
+   48000,
+   16,
+   96
+  ],
+  "hard_negatives": [
+   26000,
+   16,
+   96
+  ],
+  "background": [
+   16000,
+   16,
+   96
+  ],
+  "negatives": "(5625000, 16, 96) float16 (pre-cut windows) \u2248 2,000 h",
+  "negative_hours": 2000.0
+ },
+ "elapsed_seconds": 737.9,
+ "history": [
+  {
+   "epoch": 1,
+   "loss": 0.07378871037003895,
+   "threshold_at_1_fa_per_hour": 0.9960411787033081,
+   "recall_at_that_threshold": 0.5280208333333334,
+   "hard_negative_false_accepts": 0.0001923076923076923,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 2,
+   "loss": 0.030520424069836734,
+   "threshold_at_1_fa_per_hour": 0.9980416297912598,
+   "recall_at_that_threshold": 0.6110416666666667,
+   "hard_negative_false_accepts": 0.0003846153846153846,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 3,
+   "loss": 0.023509460155231258,
+   "threshold_at_1_fa_per_hour": 0.9991134405136108,
+   "recall_at_that_threshold": 0.5365625,
+   "hard_negative_false_accepts": 0.0,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 4,
+   "loss": 0.019159313512500376,
+   "threshold_at_1_fa_per_hour": 0.9980511665344238,
+   "recall_at_that_threshold": 0.4834375,
+   "hard_negative_false_accepts": 0.0,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 5,
+   "loss": 0.017272352885920553,
+   "threshold_at_1_fa_per_hour": 0.9989460706710815,
+   "recall_at_that_threshold": 0.6228125,
+   "hard_negative_false_accepts": 0.0003846153846153846,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 6,
+   "loss": 0.015233318261646976,
+   "threshold_at_1_fa_per_hour": 0.9991989731788635,
+   "recall_at_that_threshold": 0.7469791666666666,
+   "hard_negative_false_accepts": 0.0009615384615384616,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 7,
+   "loss": 0.012889403125736863,
+   "threshold_at_1_fa_per_hour": 0.9991679191589355,
+   "recall_at_that_threshold": 0.7005208333333334,
+   "hard_negative_false_accepts": 0.0001923076923076923,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 8,
+   "loss": 0.012080553212435917,
+   "threshold_at_1_fa_per_hour": 0.9995710253715515,
+   "recall_at_that_threshold": 0.6701041666666666,
+   "hard_negative_false_accepts": 0.0,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 9,
+   "loss": 0.012764148956242328,
+   "threshold_at_1_fa_per_hour": 0.9919541478157043,
+   "recall_at_that_threshold": 0.7555208333333333,
+   "hard_negative_false_accepts": 0.0003846153846153846,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 10,
+   "loss": 0.012123690623557195,
+   "threshold_at_1_fa_per_hour": 0.9993551969528198,
+   "recall_at_that_threshold": 0.6655208333333333,
+   "hard_negative_false_accepts": 0.0,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 11,
+   "loss": 0.010429220718021194,
+   "threshold_at_1_fa_per_hour": 0.9998533129692078,
+   "recall_at_that_threshold": 0.6502083333333334,
+   "hard_negative_false_accepts": 0.0,
+   "background_false_accepts": 0.0
+  },
+  {
+   "epoch": 12,
+   "loss": 0.009496461756449814,
+   "threshold_at_1_fa_per_hour": 0.9991392493247986,
+   "recall_at_that_threshold": 0.7565625,
+   "hard_negative_false_accepts": 0.0,
+   "background_false_accepts": 0.0
+  }
+ ]
+}
