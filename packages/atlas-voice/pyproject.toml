@@ -1,0 +1,36 @@
+[project]
+name = "atlas-voice"
+version = "0.1.0"
+description = "ATLAS Voice Engine: wake word, VAD, STT, speaker verification, TTS"
+requires-python = ">=3.12,<3.13"
+# The base install is deliberately light: protocols, the session state machine
+# and transcript normalisation are pure Python and must stay importable on a
+# machine with no models, no GPU and no microphone — that is what makes the
+# behaviour testable in CI.
+dependencies = [
+    "atlas-shared",
+    "numpy>=2.1",
+    "structlog>=24.4",
+]
+
+[project.optional-dependencies]
+# Engines live behind extras so the backend and the VPS never grow a machine
+# learning stack because the desktop grew a microphone. Each extra is added at
+# the sub-milestone that implements it, once it has been confirmed to install
+# and load here — not in advance from memory. The first attempt declared
+# `openwakeword`, which pulls `tflite-runtime`, which publishes no cp312 wheel;
+# the lock was unsatisfiable and the package had never been installed to notice.
+#
+# The voice engine runs on the Windows Agent, so engine extras carry a win32
+# marker: a universal lock must stay solvable for the Linux VPS, which will
+# never import any of this.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/atlas_voice"]
+
+[tool.uv.sources]
+atlas-shared = { workspace = true }
