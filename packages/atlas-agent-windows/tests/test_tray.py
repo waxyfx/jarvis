@@ -36,7 +36,7 @@ def tray(controller: SafeModeController, monitor: ActivityMonitor) -> TrayApplic
 
 class TestStatusText:
     def test_active_state(self, tray: TrayApplication) -> None:
-        assert tray._title() == "ATLAS — active"
+        assert tray._title() == "JARVIS — active"
 
     def test_safe_mode_is_visible(
         self, tray: TrayApplication, controller: SafeModeController

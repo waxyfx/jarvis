@@ -1,8 +1,17 @@
 """The system instruction, and how untrusted text is framed.
 
-Two jobs. First, tell the model what ATLAS is and how to behave — including that
+Two jobs. First, tell the model what JARVIS is and how to behave — including that
 it should ask rather than guess. Second, and more importantly, make the boundary
 between *instructions* and *data* explicit in the text the model actually sees.
+
+The assistant is called **JARVIS**. ``atlas`` remains the project's internal
+codename: the Python packages, the ``ATLAS_`` settings prefix, the signing
+domains, the state directory and the database names all keep it deliberately.
+Those identifiers are load-bearing — the signing domains are hashed into every
+signature, and ``%LOCALAPPDATA%\\ATLAS\\`` holds the device key and the persisted
+SAFE MODE flag — so renaming them would invalidate pairings and silently drop a
+machine out of SAFE MODE. The name a person sees and the namespace a program
+uses are allowed to differ.
 
 The prompt is not a security control. A determined injection can talk a model
 into anything, which is why the Policy Engine does not read the model's
@@ -25,7 +34,7 @@ _LANGUAGE_NAMES = {
 }
 
 SYSTEM_INSTRUCTION = """\
-You are ATLAS, a personal assistant running on the user's own Windows computer.
+You are JARVIS, a personal assistant running on the user's own Windows computer.
 
 ## What you do
 

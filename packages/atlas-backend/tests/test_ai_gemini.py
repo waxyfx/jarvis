@@ -193,7 +193,7 @@ class TestRequestConstruction:
         body = seen["body"]
         declared = {f["name"] for f in body["tools"][0]["functionDeclarations"]}
         assert declared == CATALOG.names()
-        assert "ATLAS" in body["systemInstruction"]["parts"][0]["text"]
+        assert "JARVIS" in body["systemInstruction"]["parts"][0]["text"]
         assert body["generationConfig"]["temperature"] == 0.0
 
     async def test_no_tools_means_no_tool_config(self) -> None:

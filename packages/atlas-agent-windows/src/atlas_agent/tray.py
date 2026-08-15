@@ -176,7 +176,7 @@ class TrayApplication:
         state = "SAFE MODE" if self._safe_mode.is_safe else "active"
         if self._monitor is not None and self._monitor.paused:
             state += " · monitoring paused"
-        return f"ATLAS — {state}"
+        return f"JARVIS — {state}"
 
     def _menu(self) -> Any:
         import pystray
@@ -197,7 +197,7 @@ class TrayApplication:
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(f"Kill switch: {DEFAULT_HOTKEY_LABEL}", None, enabled=False),
-            pystray.MenuItem("Quit ATLAS agent", self._quit),
+            pystray.MenuItem("Quit JARVIS agent", self._quit),
         )
 
     def _toggle_safe_mode(self) -> None:

@@ -34,6 +34,7 @@ from typing import Any
 
 __all__ = [
     "ENTRY_NAME",
+    "LEGACY_ENTRY_NAMES",
     "RUN_KEY",
     "AutostartError",
     "AutostartStatus",
@@ -43,7 +44,14 @@ __all__ = [
     "uninstall",
 ]
 
-ENTRY_NAME = "ATLAS Agent"
+#: What the user sees in Task Manager's Startup tab, so it carries the product
+#: name rather than the internal codename.
+ENTRY_NAME = "JARVIS Agent"
+#: The name this entry used before the assistant was renamed. A registry value
+#: is keyed by its name, so writing the new one leaves the old one behind and
+#: the agent would be launched twice at logon. Install removes it; the constant
+#: stays until it is safe to assume no machine still carries it.
+LEGACY_ENTRY_NAMES = ("ATLAS Agent",)
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 
@@ -77,6 +85,14 @@ def install(*, command: str | None = None) -> AutostartStatus:
     try:
         with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
             winreg.SetValueEx(key, ENTRY_NAME, 0, winreg.REG_SZ, value)
+            # Then drop any entry left by an earlier name. Without this a
+            # machine set up before the rename starts the agent twice, and the
+            # second copy fails confusingly on a port already in use.
+            for legacy in LEGACY_ENTRY_NAMES:
+                try:
+                    winreg.DeleteValue(key, legacy)
+                except FileNotFoundError:
+                    pass
     except OSError as exc:
         raise AutostartError(f"could not write the autostart entry: {exc}") from exc
 

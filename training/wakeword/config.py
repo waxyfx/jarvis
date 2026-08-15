@@ -58,66 +58,81 @@ class Voices:
 
 @dataclass(frozen=True)
 class Phrases:
-    """What counts as the wake word, and what must never be mistaken for it."""
+    """What counts as the wake word, and what must never be mistaken for it.
+
+    The wake word is **Jarvis / Джарвис**. The earlier run used "Atlas", and one
+    of the reasons it was replaced is preserved in
+    ``metrics/atlas-experiment/README.md``: «атлас» is an ordinary Russian noun,
+    so «географический атлас» fired at 1.00 and no amount of training could have
+    fixed it. «Джарвис» is not a word in either language, which removes that
+    class of collision entirely.
+    """
 
     #: Said alone, as a person summoning an assistant does.
-    positive_en: tuple[str, ...] = ("Atlas", "Atlas.", "Atlas?", "Hey Atlas")
-    positive_ru: tuple[str, ...] = ("Атлас", "Атлас.", "Атлас?", "Эй, Атлас")
+    positive_en: tuple[str, ...] = ("Jarvis", "Jarvis.", "Jarvis?", "Hey Jarvis")
+    positive_ru: tuple[str, ...] = ("Джарвис", "Джарвис.", "Джарвис?", "Эй, Джарвис")
 
     #: Near-misses. These are the expensive negatives: a model that has never
     #: heard "at last" will happily fire on it, and no amount of unrelated
     #: podcast audio teaches it otherwise. «атлас» as an ordinary noun matters
     #: especially — a Russian speaker says it in normal conversation.
+    #: Words alone teach the model a word; sentences teach it that the word is
+    #: unremarkable in ordinary speech, at conversational speed and prosody. A
+    #: name is most often misheard *inside* a sentence, not in isolation, so the
+    #: list carries both.
     hard_negative_en: tuple[str, ...] = (
-        "At last",
-        "At last, we are done",
-        "Atlanta",
-        "The Atlantic",
-        "Atlas Shrugged is a novel",
-        "A road atlas",
-        "Atlassian",
-        "That last one",
-        "Add less salt",
+        # Bare near-misses.
+        "Travis",
+        "Davis",
+        "Harvey",
+        "Jervis",
+        "Service",
+        "Jargon",
+        "Carve",
+        "Harvest",
+        # The same sounds inside ordinary sentences.
+        "Java is running on the server",
+        "The service is available again",
+        "Travis said he would call back",
+        "Davis is joining us later",
+        "The car is parked outside",
+        "As far as I can tell, nothing changed",
+        "Starve us of detail and we guess",
+        "Harvey asked about the harvest",
+        "That is a lot of jargon for one page",
+        "Could you carve out an hour tomorrow",
     )
-    #: The Russian list is longer than the English one because Russian is where
-    #: the collisions live. The v1 model fired at 1.00 on «Класс» — /klas/
-    #: against /atləs/, sharing the stressed vowel and the final consonant
-    #: cluster — so that family is now covered properly rather than by one
-    #: token. «Атлас мира» and «Географический атлас» also fired, and always
-    #: will: they contain the wake word. Keeping them here teaches the model
-    #: the *surrounding* words are not part of it, which is the most that can
-    #: be done acoustically.
+    #: The Russian list is longer because Russian carries the one genuinely
+    #: dangerous neighbour: «сервис» is /sʲerˈvʲis/ against /dʒarˈvʲis/, sharing
+    #: the stressed vowel and the whole «-рвис» ending. Everything else here is
+    #: a softer collision on «джа-», «-ар-» or «-ис».
     hard_negative_ru: tuple[str, ...] = (
-        "Атласные ткани",
-        "Атлас мира лежал на столе",
-        "Атлантика",
-        "Атлант расправил плечи",
-        "Географический атлас",
-        "Атласный бант",
-        "Ананас",
-        "Он летал в Атланту",
-        # The «класс» family, which v1 got wrong.
-        "Класс",
-        "Классно",
-        "Классный",
-        "Классика",
-        "Первый класс",
-        "Мастер-класс",
-        "Весь класс собрался",
-        "Классное решение",
-        # Other words that share the stressed /a/ and a final /s/ or /l/.
-        "Палас",
-        "Компас",
-        "Балласт",
-        "Атлет",
-        "Салат",
-        "Алмаз",
-        "Далласа",
-        "Аванс",
-        "Баланс",
-        "Гладкий",
-        "Плащ",
-        "Ласточка",
+        # Bare near-misses.
+        "Сервис",
+        "Сервиз",
+        "Дарвин",
+        "Джаз",
+        "Джазовый",
+        "Жарит",
+        "Шарит",
+        "Шарф",
+        "Париж",
+        "Барвинок",
+        "Нарвис",
+        "Гарвард",
+        # The same sounds inside ordinary sentences.
+        "В сервисе произошла ошибка",
+        "Сервис снова доступен",
+        "Отнеси часы в сервис",
+        "Дарвин писал об этом подробно",
+        "Дарвин был натуралистом",
+        "Он поставил на стол сервиз",
+        "Мне нравится джазовый концерт",
+        "Она жарит картошку на кухне",
+        "Он шарит в этой теме",
+        "Я забыл шарф в Париже",
+        "В Париже было дождливо",
+        "Гарвардский курс начинается осенью",
     )
 
 
@@ -263,7 +278,7 @@ class Config:
 
     @property
     def output_model(self) -> Path:
-        return MODELS / "oww" / "atlas_v1.onnx"
+        return MODELS / "oww" / "jarvis_v1.onnx"
 
     @property
     def metrics_dir(self) -> Path:

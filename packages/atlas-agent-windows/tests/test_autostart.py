@@ -17,18 +17,34 @@ from atlas_agent import autostart
 on_windows = pytest.mark.skipif(sys.platform != "win32", reason="registry is Windows-only")
 
 #: Distinct from the production name so a test can never disturb a real install.
-TEST_ENTRY_NAME = "ATLAS Agent (test)"
+TEST_ENTRY_NAME = "JARVIS Agent (test)"
+TEST_LEGACY_NAME = "ATLAS Agent (test)"
 PROBE_COMMAND = '"C:\\Windows\\System32\\cmd.exe" /c exit'
+
+
+def _delete_value(name: str) -> None:
+    import winreg
+
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, autostart.RUN_KEY, 0, winreg.KEY_SET_VALUE
+        ) as key:
+            winreg.DeleteValue(key, name)
+    except OSError:
+        pass
 
 
 @pytest.fixture
 def isolated_entry(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
     monkeypatch.setattr(autostart, "ENTRY_NAME", TEST_ENTRY_NAME)
+    monkeypatch.setattr(autostart, "LEGACY_ENTRY_NAMES", (TEST_LEGACY_NAME,))
     yield
     try:
         autostart.uninstall()
     except autostart.AutostartError:
         pass
+    if sys.platform == "win32":
+        _delete_value(TEST_LEGACY_NAME)
 
 
 class TestCommandConstruction:
@@ -92,6 +108,32 @@ class TestRoundTripWithoutElevation:
 
     def test_uninstalling_something_absent_is_not_an_error(self, isolated_entry: None) -> None:
         assert autostart.uninstall().installed is False
+
+    def test_installing_removes_an_entry_left_by_the_old_name(self, isolated_entry: None) -> None:
+        """The assistant was renamed; a Run value is keyed by its name.
+
+        Writing the new one without removing the old leaves both, and the agent
+        starts twice at logon — the second copy failing on a port already in
+        use, which reads as a broken install rather than a stale registry value.
+        """
+        import winreg
+
+        with winreg.CreateKeyEx(
+            winreg.HKEY_CURRENT_USER, autostart.RUN_KEY, 0, winreg.KEY_SET_VALUE
+        ) as key:
+            winreg.SetValueEx(key, TEST_LEGACY_NAME, 0, winreg.REG_SZ, PROBE_COMMAND)
+
+        autostart.install(command=PROBE_COMMAND)
+
+        assert autostart.status().installed is True
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, autostart.RUN_KEY, 0, winreg.KEY_QUERY_VALUE
+        ) as key:
+            with pytest.raises(FileNotFoundError):
+                winreg.QueryValueEx(key, TEST_LEGACY_NAME)
+
+    def test_installing_without_a_legacy_entry_is_unaffected(self, isolated_entry: None) -> None:
+        assert autostart.install(command=PROBE_COMMAND).installed is True
 
     def test_removal_is_complete(self, isolated_entry: None) -> None:
         # "Fully disable it" has to mean the entry is gone, not merely blanked.
