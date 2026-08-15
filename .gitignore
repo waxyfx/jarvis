@@ -36,6 +36,10 @@ secrets/
 # They are large, they are not ours, and their licences travel with the
 # upstream projects rather than with this repository.
 .models/
+# Wake-word training scratch: ~25 GB of downloads, synthesised clips and
+# intermediate feature arrays, all reproducible from training/wakeword/.
+# The scripts and metrics that make it reproducible *are* committed.
+.training/
 
 # --- python ---
 __pycache__/

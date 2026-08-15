@@ -178,6 +178,25 @@ class OpenWakeWord:
 
     # ------------------------------------------------------------- diagnostics
 
+    def scores_with_times(self, samples: np.ndarray) -> list[tuple[float, float]]:
+        """``(stream_time, score)`` for every window this audio produces.
+
+        The time is taken from the detector's own clock rather than derived from
+        the index. Deriving it means guessing how many chunks the pipeline
+        swallows before the first window exists — the classifier needs sixteen
+        embeddings, which is nearly two seconds of audio — and guessing it wrong
+        produces *negative* latencies, which is how this was found.
+        """
+        self.reset()
+        self._elapsed = 0.0
+        self._quiet_until = 0.0
+        collected: list[tuple[float, float]] = []
+        for offset in range(0, len(samples) - _CHUNK + 1, _CHUNK):
+            self.push(samples[offset : offset + _CHUNK])
+            if len(self._embeddings) == _CLF_WINDOW:
+                collected.append((self._elapsed, self.last_score))
+        return collected
+
     def scores_for(self, samples: np.ndarray) -> list[float]:
         """Every score this audio produces, ignoring the refractory period.
 
@@ -185,11 +204,4 @@ class OpenWakeWord:
         how often the score crosses a threshold rather than what a session would
         have done about it.
         """
-        self.reset()
-        self._quiet_until = 0.0
-        collected: list[float] = []
-        for offset in range(0, len(samples) - _CHUNK + 1, _CHUNK):
-            self.push(samples[offset : offset + _CHUNK])
-            if len(self._embeddings) == _CLF_WINDOW:
-                collected.append(self.last_score)
-        return collected
+        return [score for _, score in self.scores_with_times(samples)]

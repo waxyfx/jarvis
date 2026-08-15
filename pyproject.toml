@@ -23,6 +23,27 @@ atlas-agent-windows = { workspace = true }
 atlas-voice = { workspace = true }
 
 [dependency-groups]
+# Wake-word training. Never installed on the agent or the VPS: these exist to
+# produce a 1 MB ONNX classifier, and once it exists they are not needed to run
+# it. torch is the CPU build deliberately — the classifier reads 16x96
+# precomputed embeddings, so training is bound by reading a memory-mapped array
+# rather than by arithmetic, and the CUDA build would add 2.3 GB for nothing.
+training = [
+    "torch>=2.5",
+    "onnx>=1.17",
+    "huggingface-hub>=0.26",
+    "soundfile>=0.12",
+    "scipy>=1.14",
+    "tqdm>=4.66",
+    # The noise corpus ships as parquet shards with the audio embedded.
+    "pyarrow>=18.0",
+    # The synthesiser that produces the positive examples, and the runtime that
+    # turns them into features. Both are also atlas-voice extras; naming them
+    # here means `uv run --group training` is self-sufficient.
+    "piper-tts>=1.2; sys_platform == 'win32'",
+    "onnxruntime>=1.20; sys_platform == 'win32'",
+    "psutil>=6.0",
+]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
@@ -68,6 +89,11 @@ ignore = [
 # Test fixtures legitimately contain literal secrets and non-crypto randomness.
 "**/tests/**" = ["S105", "S106", "S311"]
 "e2e/**" = ["S105", "S106", "S311"]
+# Training scripts. Randomness here is for data augmentation, where
+# reproducibility from a seed is the requirement and cryptographic quality
+# would be actively unhelpful. Decoding a corpus of third-party audio also
+# means skipping files that fail to decode, one by one, without ceremony.
+"training/**" = ["S105", "S106", "S112", "S311"]
 
 # ---------------------------------------------------------------- mypy
 [tool.mypy]

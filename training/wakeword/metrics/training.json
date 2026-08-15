@@ -1,0 +1,161 @@
+{
+ "config": {
+  "training": {
+   "batch_size": 1024,
+   "epochs": 12,
+   "learning_rate": 0.001,
+   "weight_decay": 1e-05,
+   "positive_fraction": 0.25,
+   "negative_windows": null,
+   "seed": 20260815,
+   "thresholds": [
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8,
+    0.9,
+    0.95,
+    0.99
+   ]
+  },
+  "synthesis": {
+   "length_scale": [
+    0.75,
+    1.35
+   ],
+   "noise_scale": [
+    0.4,
+    0.9
+   ],
+   "noise_w": [
+    0.4,
+    1.1
+   ],
+   "positives_en": 12000,
+   "positives_ru": 12000,
+   "hard_negatives_en": 4000,
+   "hard_negatives_ru": 4000
+  },
+  "augmentation": {
+   "reverb_probability": 0.6,
+   "noise_probability": 0.8,
+   "snr_db": [
+    0.0,
+    25.0
+   ],
+   "gain_db": [
+    -22.0,
+    -3.0
+   ],
+   "word_end_fraction": [
+    0.72,
+    0.98
+   ]
+  }
+ },
+ "shapes": {
+  "positives": [
+   48000,
+   16,
+   96
+  ],
+  "hard_negatives": [
+   16000,
+   16,
+   96
+  ],
+  "negatives": "(5625000, 16, 96) float16 (pre-cut windows) \u2248 2,000 h",
+  "negative_hours": 2000.0
+ },
+ "elapsed_seconds": 792.6,
+ "history": [
+  {
+   "epoch": 1,
+   "loss": 0.052758924396087724,
+   "threshold_at_1_fa_per_hour": 0.9991421103477478,
+   "recall_at_that_threshold": 0.6834375,
+   "hard_negative_false_accepts": 0.0
+  },
+  {
+   "epoch": 2,
+   "loss": 0.011828298644977621,
+   "threshold_at_1_fa_per_hour": 0.9994909167289734,
+   "recall_at_that_threshold": 0.7488541666666667,
+   "hard_negative_false_accepts": 0.0
+  },
+  {
+   "epoch": 3,
+   "loss": 0.008433192777156364,
+   "threshold_at_1_fa_per_hour": 0.999663233757019,
+   "recall_at_that_threshold": 0.7382291666666667,
+   "hard_negative_false_accepts": 0.0
+  },
+  {
+   "epoch": 4,
+   "loss": 0.006521185967333925,
+   "threshold_at_1_fa_per_hour": 0.9996412396430969,
+   "recall_at_that_threshold": 0.873125,
+   "hard_negative_false_accepts": 0.000625
+  },
+  {
+   "epoch": 5,
+   "loss": 0.005318320547545833,
+   "threshold_at_1_fa_per_hour": 0.9995497465133667,
+   "recall_at_that_threshold": 0.8041666666666667,
+   "hard_negative_false_accepts": 0.0
+  },
+  {
+   "epoch": 6,
+   "loss": 0.004480688831439087,
+   "threshold_at_1_fa_per_hour": 0.9996132850646973,
+   "recall_at_that_threshold": 0.8838541666666667,
+   "hard_negative_false_accepts": 0.0003125
+  },
+  {
+   "epoch": 7,
+   "loss": 0.00399547855782051,
+   "threshold_at_1_fa_per_hour": 0.9996614456176758,
+   "recall_at_that_threshold": 0.9001041666666667,
+   "hard_negative_false_accepts": 0.00125
+  },
+  {
+   "epoch": 8,
+   "loss": 0.003954000984643547,
+   "threshold_at_1_fa_per_hour": 0.9997842311859131,
+   "recall_at_that_threshold": 0.8569791666666666,
+   "hard_negative_false_accepts": 0.000625
+  },
+  {
+   "epoch": 9,
+   "loss": 0.0035956252623266967,
+   "threshold_at_1_fa_per_hour": 0.9997217655181885,
+   "recall_at_that_threshold": 0.878125,
+   "hard_negative_false_accepts": 0.000625
+  },
+  {
+   "epoch": 10,
+   "loss": 0.0030242464308200094,
+   "threshold_at_1_fa_per_hour": 0.9996659159660339,
+   "recall_at_that_threshold": 0.8651041666666667,
+   "hard_negative_false_accepts": 0.0
+  },
+  {
+   "epoch": 11,
+   "loss": 0.003256937190944882,
+   "threshold_at_1_fa_per_hour": 0.9996833801269531,
+   "recall_at_that_threshold": 0.93625,
+   "hard_negative_false_accepts": 0.00125
+  },
+  {
+   "epoch": 12,
+   "loss": 0.0029641071264874578,
+   "threshold_at_1_fa_per_hour": 0.9993930459022522,
+   "recall_at_that_threshold": 0.930625,
+   "hard_negative_false_accepts": 0.00125
+  }
+ ]
+}
