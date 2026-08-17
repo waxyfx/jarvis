@@ -57,11 +57,28 @@ requires_piper = pytest.mark.skipif(
 )
 
 
-def _synthesise(model: Path, text: str) -> np.ndarray:
+#: A 904-speaker English model, so a test can ask "does this work for more than
+#: one voice" — which for a wake word is most of the question.
+PIPER_MULTI = MODELS / "piper" / "en_US-libritts_r-medium.onnx"
+
+#: Loading a Piper voice costs about two seconds, and these are used per test.
+_LOADED: dict[Path, object] = {}
+
+
+def _voice(model: Path):  # type: ignore[no-untyped-def]
     from piper import PiperVoice
 
-    voice = PiperVoice.load(str(model))
-    chunks = list(voice.synthesize(text))
+    if model not in _LOADED:
+        _LOADED[model] = PiperVoice.load(str(model))
+    return _LOADED[model]
+
+
+def _synthesise(model: Path, text: str, *, speaker_id: int | None = None) -> np.ndarray:
+    from piper import SynthesisConfig
+
+    voice = _voice(model)
+    options = SynthesisConfig(speaker_id=speaker_id) if speaker_id is not None else None
+    chunks = list(voice.synthesize(text, syn_config=options))
     audio = np.concatenate([chunk.audio_float_array for chunk in chunks]).astype(np.float32)
     return resample(audio, from_rate=chunks[0].sample_rate, to_rate=SAMPLE_RATE)
 

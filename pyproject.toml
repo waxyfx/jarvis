@@ -43,6 +43,7 @@ training = [
     "piper-tts>=1.2; sys_platform == 'win32'",
     "onnxruntime>=1.20; sys_platform == 'win32'",
     "psutil>=6.0",
+    "sentencepiece>=0.2.2",
 ]
 dev = [
     "pytest>=8.3",
@@ -133,7 +134,8 @@ module = [
     "onnxruntime.*",
     "piper.*",
     "sounddevice.*",
-    "pvporcupine.*",
+    "sherpa_onnx.*",
+    "sentencepiece.*",
 ]
 ignore_missing_imports = true
 

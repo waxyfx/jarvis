@@ -89,6 +89,29 @@ foreach ($model in @("melspectrogram.onnx", "embedding_model.onnx", "hey_jarvis_
     Get-Model -Url "$owwBase/$model" -Destination (Join-Path $ModelDir "oww\$model")
 }
 
+Write-Step "sherpa-onnx keyword spotting"
+# Apache-2.0, fully offline, no key and no vendor. Two model families: an
+# English BPE model and a bilingual one that takes CMU phonemes. Both are kept
+# because they disagree on which voices they hear, and the union is better than
+# either.
+$kwsBase = "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models"
+$kwsDir = Join-Path $ModelDir "kws"
+foreach ($archive in @(
+    "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01",
+    "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20"
+)) {
+    if (Test-Path (Join-Path $kwsDir $archive)) {
+        Write-Skip $archive
+        continue
+    }
+    $tarball = Join-Path $kwsDir "$archive.tar.bz2"
+    Get-Model -Url "$kwsBase/$archive.tar.bz2" -Destination $tarball
+    Write-Host "    extracting $archive ..." -NoNewline
+    python -c "import tarfile,sys; tarfile.open(sys.argv[1],'r:bz2').extractall(sys.argv[2], filter='data')" $tarball $kwsDir
+    Remove-Item $tarball -Force
+    Write-Host " ok" -ForegroundColor Green
+}
+
 Write-Host ""
 Write-Host "Ready." -ForegroundColor Green
 Write-Host "  Voice tests:  uv run pytest packages/atlas-voice"
