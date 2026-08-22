@@ -222,6 +222,40 @@ async def _run(settings: AgentSettings, *, with_tray: bool) -> int:
 # ---------------------------------------------------------------------- main
 
 
+def _enroll_voice(args: argparse.Namespace) -> int:
+    """Open the voice enrollment window, or list the microphones.
+
+    Imported lazily: the window pulls in tkinter and the speaker model, and
+    `atlas-agent status` should not pay for either.
+    """
+    from pathlib import Path
+
+    from atlas_agent.config import _state_dir
+    from atlas_voice.capture import list_input_devices
+    from atlas_voice.providers import VoiceEngineError
+
+    if args.list_devices:
+        # The Windows console defaults to a legacy code page, and device names
+        # are full of Cyrillic here. Without this the listing is mojibake.
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        try:
+            devices = list_input_devices()
+        except VoiceEngineError as error:
+            print(error)
+            return 1
+        for device in devices:
+            marker = " (default)" if device.is_default else ""
+            name = " ".join(device.name.split())[:60]
+            print(f"  {device.index:3}  {name}{marker}")
+        return 0
+
+    from atlas_agent.voice_ui import run_enrollment
+
+    models = Path(__file__).resolve().parents[4] / ".models"
+    return run_enrollment(models_dir=models, state_dir=_state_dir(), device=args.device)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="atlas-agent", description="ATLAS Windows Agent.")
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -240,6 +274,16 @@ def main() -> None:
     auto = subcommands.add_parser("autostart", help="start the agent at logon")
     auto.add_argument("action", choices=["install", "uninstall", "status"])
 
+    voice = subcommands.add_parser(
+        "enroll-voice", help="open the window that registers your voice with JARVIS"
+    )
+    voice.add_argument(
+        "--device", type=int, default=None, help="input device index; the default is used otherwise"
+    )
+    voice.add_argument(
+        "--list-devices", action="store_true", help="print the microphones and exit"
+    )
+
     args = parser.parse_args()
     settings = get_agent_settings()
     configure_logging(level=settings.log_level)
@@ -247,6 +291,8 @@ def main() -> None:
     try:
         if args.command == "pair":
             sys.exit(asyncio.run(_pair(settings, args.code)))
+        elif args.command == "enroll-voice":
+            sys.exit(_enroll_voice(args))
         elif args.command == "status":
             sys.exit(asyncio.run(_status(settings)))
         elif args.command == "safe-mode":

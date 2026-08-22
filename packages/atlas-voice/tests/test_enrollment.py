@@ -42,7 +42,7 @@ class FakeEmbedder:
         return vector / np.linalg.norm(vector)
 
 
-def speech(seconds: float = 2.0, *, level: float = 0.2) -> np.ndarray:
+def speech(seconds: float = 2.0, *, level: float = 0.25) -> np.ndarray:
     t = np.arange(int(seconds * SAMPLE_RATE), dtype=np.float32) / SAMPLE_RATE
     return (level * np.sin(2 * np.pi * 140 * t)).astype(np.float32)
 
@@ -88,6 +88,21 @@ class TestJudgingTakes:
         assert not verdict.accepted
         assert verdict.reason == "too_quiet"
         assert verdict.advice
+
+    def test_room_noise_is_rejected(self, tmp_path: Path) -> None:
+        """The level measured on this machine with nobody speaking.
+
+        The first threshold was set at 0.01 by guesswork and the real noise
+        floor turned out to be 0.0105 — an empty room would have been accepted
+        as a phrase and quietly averaged into the profile.
+        """
+        rng = np.random.default_rng(7)
+        noise = (rng.standard_normal(2 * SAMPLE_RATE) * 0.0105).astype(np.float32)
+
+        verdict = session(tmp_path).judge(noise)
+
+        assert not verdict.accepted
+        assert verdict.reason == "too_quiet"
 
     def test_a_short_take_is_rejected(self, tmp_path: Path) -> None:
         verdict = session(tmp_path).judge(speech(seconds=0.4))

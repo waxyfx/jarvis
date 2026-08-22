@@ -70,7 +70,15 @@ MINIMUM_TAKE_SECONDS = 1.0
 #: then partly describes the clipping.
 CLIPPING_LIMIT = 0.999
 #: Below this the microphone was too far away or the person too quiet.
-MINIMUM_RMS = 0.01
+#:
+#: Measured rather than guessed, and the first guess was wrong: this machine's
+#: onboard microphone reads rms 0.0105 with nobody speaking, so the original
+#: 0.01 would have accepted a recording of an empty room as a phrase. Speech at
+#: a normal distance sits an order of magnitude above this.
+MINIMUM_RMS = 0.025
+#: A second floor, because room noise is diffuse while speech has peaks. The
+#: same silent room peaks at 0.053; a spoken phrase reaches several times that.
+MINIMUM_PEAK = 0.10
 #: A take whose embedding sits this far from the others was not the same voice,
 #: the same room, or the same microphone position.
 OUTLIER_SIMILARITY = 0.45
@@ -152,7 +160,7 @@ class EnrollmentSession:
             return TakeVerdict(False, "too_short", seconds, peak, rms)
         if np.count_nonzero(np.abs(samples) >= CLIPPING_LIMIT) >= 3:
             return TakeVerdict(False, "clipped", seconds, peak, rms)
-        if rms < MINIMUM_RMS:
+        if rms < MINIMUM_RMS or peak < MINIMUM_PEAK:
             return TakeVerdict(False, "too_quiet", seconds, peak, rms)
         return TakeVerdict(True, "", seconds, peak, rms)
 
