@@ -72,6 +72,11 @@ def make_scorer(model: KeywordModel, phrases: tuple[str, ...], threshold: float)
 
     def score(audio: np.ndarray, word_ends_at: float | None):  # type: ignore[no-untyped-def]
         detector.reset()
+        # Stream time keeps running across clips by design, so a detection's
+        # `at` has to be read relative to where this clip started. Without the
+        # offset the reported latency is the whole accumulated stream: the first
+        # run of this harness claimed a median of 166 seconds.
+        started_at = detector.elapsed
         scores: list[float] = []
         latency: float | None = None
 
@@ -79,14 +84,14 @@ def make_scorer(model: KeywordModel, phrases: tuple[str, ...], threshold: float)
             detection = detector.push(audio[offset : offset + FRAME_SAMPLES])
             scores.append(1.0 if detection is not None else 0.0)
             if detection is not None and latency is None and word_ends_at is not None:
-                latency = detection.at - word_ends_at
+                latency = (detection.at - started_at) - word_ends_at
 
         # The transducer needs a little silence to commit; a clip simply ends.
         final = detector.flush()
         if final is not None:
             scores.append(1.0)
             if latency is None and word_ends_at is not None:
-                latency = final.at - word_ends_at
+                latency = (final.at - started_at) - word_ends_at
         return scores, latency
 
     return score

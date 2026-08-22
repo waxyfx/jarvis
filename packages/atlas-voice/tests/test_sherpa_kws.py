@@ -54,7 +54,14 @@ def say(text: str, *, speaker: int = 11) -> np.ndarray:
 
 
 def run(detector: SherpaKeywordSpotter, audio: np.ndarray) -> object | None:
-    """Stream in pipeline frames, then flush, exactly as the session will."""
+    """Stream one utterance in pipeline frames, then flush.
+
+    Resets first, because each clip is a separate utterance and a session
+    resets between them. Without it the refractory window from clip N silences
+    clip N+1, and a recall figure ends up measuring the gap between test cases
+    rather than the detector.
+    """
+    detector.reset()
     found = None
     for offset in range(0, len(audio) - FRAME_SAMPLES + 1, FRAME_SAMPLES):
         found = found or detector.push(audio[offset : offset + FRAME_SAMPLES])

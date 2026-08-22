@@ -220,9 +220,31 @@ class SherpaKeywordSpotter:
                 detection = Detection(score=1.0, at=self._elapsed, label=self._label)
         return detection
 
+    @property
+    def elapsed(self) -> float:
+        """Seconds of audio fed since construction.
+
+        Deliberately *not* zeroed by :meth:`reset`: this is stream time, and a
+        detection's ``at`` is only meaningful against a clock that keeps
+        running. A caller measuring one clip at a time has to subtract the value
+        it saw at the start — the acceptance harness did not, and reported a
+        median latency of 166 seconds, which is 592 clips of accumulated stream
+        rather than anything about the detector.
+        """
+        return self._elapsed
+
     def reset(self) -> None:
+        """Drop the decoder state and be ready immediately.
+
+        It deliberately does *not* start a refractory period. Suppressing a
+        repeat is already handled where it belongs — the quiet window is set at
+        the moment of a detection — and doing it here as well leaves the
+        detector deaf for a second after every reset. Measured cost of that
+        mistake: recall on the acceptance suite read 0.629 instead of 0.719,
+        because each clip begins with a second of silence and the word landed
+        inside the self-imposed deafness.
+        """
         self._stream = self._spotter.create_stream()
-        self._quiet_until = self._elapsed + self._refractory_s
         self.last_score = 0.0
 
     def flush(self) -> Detection | None:
