@@ -7,7 +7,11 @@ dependencies = [
     "atlas-shared",
     "atlas-backend",
     "atlas-agent-windows",
-    "atlas-voice",
+    # With every engine extra: this is the development environment, and the
+    # extras exist to keep the *VPS* lean, not this machine. Without them a
+    # plain `uv run` silently uninstalls piper and sherpa, and the voice tests
+    # collapse with ModuleNotFoundError rather than skipping.
+    "atlas-voice[vad,wake,stt,tts]",
 ]
 
 [tool.uv]
@@ -136,6 +140,7 @@ module = [
     "sounddevice.*",
     "sherpa_onnx.*",
     "sentencepiece.*",
+    "faster_whisper.*",
 ]
 ignore_missing_imports = true
 

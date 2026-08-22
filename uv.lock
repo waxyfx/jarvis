@@ -124,7 +124,7 @@ dependencies = [
     { name = "atlas-agent-windows" },
     { name = "atlas-backend" },
     { name = "atlas-shared" },
-    { name = "atlas-voice" },
+    { name = "atlas-voice", extra = ["stt", "tts", "vad", "wake"] },
 ]
 
 [package.dev-dependencies]
@@ -155,7 +155,7 @@ requires-dist = [
     { name = "atlas-agent-windows", editable = "packages/atlas-agent-windows" },
     { name = "atlas-backend", editable = "packages/atlas-backend" },
     { name = "atlas-shared", editable = "packages/atlas-shared" },
-    { name = "atlas-voice", editable = "packages/atlas-voice" },
+    { name = "atlas-voice", extras = ["vad", "wake", "stt", "tts"], editable = "packages/atlas-voice" },
 ]
 
 [package.metadata.requires-dev]
@@ -269,6 +269,8 @@ dependencies = [
 [package.optional-dependencies]
 stt = [
     { name = "faster-whisper", marker = "sys_platform == 'win32'" },
+    { name = "nvidia-cublas-cu12", marker = "sys_platform == 'win32'" },
+    { name = "nvidia-cudnn-cu12", marker = "sys_platform == 'win32'" },
 ]
 tts = [
     { name = "piper-tts", marker = "sys_platform == 'win32'" },
@@ -277,6 +279,7 @@ vad = [
     { name = "onnxruntime", marker = "sys_platform == 'win32'" },
 ]
 wake = [
+    { name = "sentencepiece", marker = "sys_platform == 'win32'" },
     { name = "sherpa-onnx", marker = "sys_platform == 'win32'" },
 ]
 
@@ -285,8 +288,11 @@ requires-dist = [
     { name = "atlas-shared", editable = "packages/atlas-shared" },
     { name = "faster-whisper", marker = "sys_platform == 'win32' and extra == 'stt'", specifier = ">=1.1" },
     { name = "numpy", specifier = ">=2.1" },
+    { name = "nvidia-cublas-cu12", marker = "sys_platform == 'win32' and extra == 'stt'", specifier = ">=12.4" },
+    { name = "nvidia-cudnn-cu12", marker = "sys_platform == 'win32' and extra == 'stt'", specifier = ">=9.1" },
     { name = "onnxruntime", marker = "sys_platform == 'win32' and extra == 'vad'", specifier = ">=1.20" },
     { name = "piper-tts", marker = "sys_platform == 'win32' and extra == 'tts'", specifier = ">=1.2" },
+    { name = "sentencepiece", marker = "sys_platform == 'win32' and extra == 'wake'", specifier = ">=0.2" },
     { name = "sherpa-onnx", marker = "sys_platform == 'win32' and extra == 'wake'", specifier = ">=1.10" },
     { name = "structlog", specifier = ">=24.4" },
 ]
@@ -883,6 +889,17 @@ wheels = [
 ]
 
 [[package]]
+name = "nvidia-cublas-cu12"
+version = "12.9.2.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "nvidia-cuda-nvrtc-cu12" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/20/e2/fc9a0e985249d873150276d5afb02e39a66817fedbf1a385724393e505ed/nvidia_cublas_cu12-12.9.2.10-py3-none-win_amd64.whl", hash = "sha256:623f43027d40d44ceadf0043f002bd25cf353e8f13ce90b9a87057019f560661", size = 553162896, upload-time = "2026-04-08T18:53:10.035Z" },
+]
+
+[[package]]
 name = "nvidia-cuda-cupti"
 version = "13.0.85"
 source = { registry = "https://pypi.org/simple" }
@@ -901,12 +918,31 @@ wheels = [
 ]
 
 [[package]]
+name = "nvidia-cuda-nvrtc-cu12"
+version = "12.9.86"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/52/de/823919be3b9d0ccbf1f784035423c5f18f4267fb0123558d58b813c6ec86/nvidia_cuda_nvrtc_cu12-12.9.86-py3-none-win_amd64.whl", hash = "sha256:72972ebdcf504d69462d3bcd67e7b81edd25d0fb85a2c46d3ea3517666636349", size = 76408187, upload-time = "2025-06-05T20:12:27.819Z" },
+]
+
+[[package]]
 name = "nvidia-cuda-runtime"
 version = "13.0.96"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/87/4f/17d7b9b8e285199c58ce28e31b5c5bbaa4d8271af06a89b6405258245de2/nvidia_cuda_runtime-13.0.96-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:ef9bcbe90493a2b9d810e43d249adb3d02e98dd30200d86607d8d02687c43f55", size = 2261060, upload-time = "2025-10-09T08:55:15.78Z" },
     { url = "https://files.pythonhosted.org/packages/2e/24/d1558f3b68b1d26e706813b1d10aa1d785e4698c425af8db8edc3dced472/nvidia_cuda_runtime-13.0.96-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:7f82250d7782aa23b6cfe765ecc7db554bd3c2870c43f3d1821f1d18aebf0548", size = 2243632, upload-time = "2025-10-09T08:55:36.117Z" },
+]
+
+[[package]]
+name = "nvidia-cudnn-cu12"
+version = "9.24.0.43"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "nvidia-cublas-cu12" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/28/2c9a2a97a8b3fedcf74a14f38fd5edfae12274380a829fdc6b16ce29be4c/nvidia_cudnn_cu12-9.24.0.43-py3-none-win_amd64.whl", hash = "sha256:cbd41a0ab084422c936dc9fb2fc89be5ea9a85bc421c6f23d0243bdfc945fbef", size = 737103728, upload-time = "2026-07-02T16:30:10.901Z" },
 ]
 
 [[package]]

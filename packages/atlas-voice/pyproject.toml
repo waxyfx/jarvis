@@ -22,9 +22,15 @@ tts = [
 ]
 wake = [
     "sherpa-onnx>=1.10 ; sys_platform == 'win32'",
+    # Needed at *runtime*, not only for training: the BPE keyword model wants
+    # its phrase tokenised before the spotter can be built. Leaving it out made
+    # the extra look complete and fail on first use.
+    "sentencepiece>=0.2 ; sys_platform == 'win32'",
 ]
 stt = [
     "faster-whisper>=1.1 ; sys_platform == 'win32'",
+    "nvidia-cublas-cu12>=12.4 ; sys_platform == 'win32'",
+    "nvidia-cudnn-cu12>=9.1 ; sys_platform == 'win32'",
 ]
 # Engines live behind extras so the backend and the VPS never grow a machine
 # learning stack because the desktop grew a microphone. Each extra is added at
