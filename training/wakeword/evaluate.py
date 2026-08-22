@@ -22,6 +22,7 @@ import argparse
 import json
 import random
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -218,6 +219,22 @@ def curve(trials: list[Trial], thresholds: tuple[float, ...]) -> list[dict[str, 
     return rows
 
 
+def summarise_latency(trials: list[Trial]) -> dict[str, object]:
+    """How long after the word ends the detection arrives.
+
+    ``measured_on`` is reported alongside the figures because a median over
+    nothing is not a median: a model that never fires produces an empty list,
+    and only the count distinguishes that from a fast one.
+    """
+    latencies = [t.latency_s for t in trials if t.latency_s is not None]
+    return {
+        "measured_on": len(latencies),
+        "median": round(float(np.median(latencies)), 3) if latencies else None,
+        "p90": round(float(np.percentile(latencies, 90)), 3) if latencies else None,
+        "max": round(float(np.max(latencies)), 3) if latencies else None,
+    }
+
+
 def by_group(trials: list[Trial], threshold: float) -> dict[str, dict[str, object]]:
     groups: dict[str, list[Trial]] = {}
     for trial in trials:
@@ -252,13 +269,29 @@ def by_group(trials: list[Trial], threshold: float) -> dict[str, dict[str, objec
     return summary
 
 
-def build_trials(model: Path, *, rng: random.Random, quick: bool) -> list[Trial]:
+#: Scores one clip: ``(audio, word_ends_at) -> (per-window scores, latency)``.
+Scorer = Callable[[np.ndarray, float | None], tuple[list[float], float | None]]
+
+
+def build_trials(
+    model: Path, *, rng: random.Random, quick: bool, scorer: Scorer | None = None
+) -> list[Trial]:
+    """Generate the clips and score them.
+
+    ``scorer`` exists so a different engine can be measured on *identical*
+    audio. Regenerating the clips for each engine would compare two exams
+    instead of two engines — a mistake already made once in this project, when
+    a grown near-miss list made a new model look like a regression.
+    """
+    score_clip: Scorer = scorer or (
+        lambda audio, ends_at: run_trial(model, audio, word_ends_at=ends_at)
+    )
     trials: list[Trial] = []
     impulses = load_impulse_responses(CONFIG.rir_dir)
     noises = load_noise_pool(CONFIG.noise_dir, segments=200 if quick else 800, rng=rng)
 
     def add(name: str, group: str, audio: np.ndarray, *, wake: bool, ends_at: float | None) -> None:
-        scores, latency = run_trial(model, audio, word_ends_at=ends_at)
+        scores, latency = score_clip(audio, ends_at)
         trials.append(
             Trial(
                 name=name,
@@ -420,7 +453,6 @@ def main() -> int:
     rng = random.Random(CONFIG.training.seed + 2)
     trials = build_trials(arguments.model, rng=rng, quick=arguments.quick)
 
-    latencies = [t.latency_s for t in trials if t.latency_s is not None]
     report = {
         "model": str(arguments.model.name),
         "clips": len(trials),
@@ -429,12 +461,7 @@ def main() -> int:
             "threshold": arguments.report_threshold,
             "groups": by_group(trials, arguments.report_threshold),
         },
-        "latency_seconds": {
-            "measured_on": len(latencies),
-            "median": round(float(np.median(latencies)), 3) if latencies else None,
-            "p90": round(float(np.percentile(latencies, 90)), 3) if latencies else None,
-            "max": round(float(np.max(latencies)), 3) if latencies else None,
-        },
+        "latency_seconds": summarise_latency(trials),
         "resources_while_listening": measure_resources(arguments.model),
         "caveat": (
             "Synthesised speech throughout. A synthesiser trained on read speech is "
