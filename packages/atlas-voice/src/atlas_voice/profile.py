@@ -53,14 +53,36 @@ class VoiceProfile:
     #: Kept so a future change of embedding model can refuse a stale profile
     #: rather than silently comparing vectors that mean different things.
     dimensions: int
+    #: Which ways of speaking went into it — normal, quiet, at a distance.
+    #: Recorded because cohesion alone cannot tell a good profile from a narrow
+    #: one, and the difference is what decides whether the owner is recognised
+    #: on a bad morning.
+    covers: tuple[str, ...] = ()
 
     @property
     def quality(self) -> str:
-        if self.cohesion >= 0.80:
-            return "strong"
-        if self.cohesion >= 0.65:
-            return "usable"
-        return "weak"
+        """How much this profile can be relied on.
+
+        Cohesion is agreement between the takes, and on its own it rewards the
+        wrong thing: twelve recordings made in one sitting, one distance, one
+        volume agree beautifully and still describe a single way of speaking.
+        The first real profile scored 0.84 here and then failed to recognise its
+        owner speaking quietly — 0.54 against a threshold of 0.55. Nothing in
+        the number gave any warning.
+
+        So coverage is weighed too. A profile that heard only one manner cannot
+        be strong however tightly it agrees with itself, and a profile that
+        deliberately spans several is judged against a lower bar, because the
+        variation it was asked for is the reason its cohesion is lower.
+        """
+        varied = len(self.covers) >= 2
+        if varied:
+            if self.cohesion >= 0.70:
+                return "strong"
+            return "usable" if self.cohesion >= 0.55 else "weak"
+        # Narrow: capped, because agreement here only measures how similar the
+        # sitting was to itself.
+        return "usable" if self.cohesion >= 0.65 else "weak"
 
 
 class VoiceProfileStore:
@@ -86,6 +108,7 @@ class VoiceProfileStore:
                 "created_at": profile.created_at,
                 "model": profile.model,
                 "dimensions": profile.dimensions,
+                "covers": list(profile.covers),
             }
         ).encode("utf-8")
 
@@ -108,6 +131,9 @@ class VoiceProfileStore:
             created_at=str(raw["created_at"]),
             model=str(raw["model"]),
             dimensions=int(raw["dimensions"]),
+            # Absent from profiles written before coverage was recorded. They
+            # were all single-manner, so an empty tuple is the truth about them.
+            covers=tuple(str(item) for item in raw.get("covers", ())),
         )
 
     def delete(self) -> bool:

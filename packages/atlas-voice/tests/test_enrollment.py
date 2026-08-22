@@ -18,7 +18,7 @@ import pytest
 
 from atlas_shared.enums import Language
 from atlas_voice.audio import SAMPLE_RATE
-from atlas_voice.enrollment import EnrollmentSession, TakeVerdict
+from atlas_voice.enrollment import EnrollmentSession, Manner, TakeVerdict
 from atlas_voice.profile import VoiceProfileStore, plaintext_protector
 from atlas_voice.providers import VoiceEngineError
 
@@ -56,8 +56,40 @@ class TestTheScript:
     def test_it_asks_for_both_languages(self, tmp_path: Path) -> None:
         script = session(tmp_path).script()
 
-        languages = {language for language, _ in script}
-        assert languages == {Language.EN, Language.RU}
+        assert {prompt.language for prompt in script} == {Language.EN, Language.RU}
+
+    def test_it_asks_for_more_than_one_way_of_speaking(self, tmp_path: Path) -> None:
+        """A profile from twelve identical takes describes one manner.
+
+        The first real one scored cohesion 0.84 and then failed to recognise
+        its owner speaking quietly, 0.54 against a threshold of 0.55.
+        """
+        manners = {prompt.manner for prompt in session(tmp_path).script()}
+
+        assert manners == {Manner.NORMAL, Manner.QUIET, Manner.DISTANT}
+
+    def test_the_first_take_is_spoken_normally(self, tmp_path: Path) -> None:
+        """Where people find their footing. Not the place for instructions."""
+        assert session(tmp_path).script()[0].manner is Manner.NORMAL
+
+    def test_the_varied_takes_are_spread_out(self, tmp_path: Path) -> None:
+        """Bunched at the end, an abandoned session has no coverage at all."""
+        script = session(tmp_path).script()
+        odd = [i for i, prompt in enumerate(script) if prompt.manner is not Manner.NORMAL]
+
+        assert min(odd) < len(script) / 2
+
+    def test_the_normal_takes_carry_no_instruction(self, tmp_path: Path) -> None:
+        script = session(tmp_path).script()
+
+        assert all(prompt.hint == "" for prompt in script if prompt.manner is Manner.NORMAL)
+        assert all(prompt.hint for prompt in script if prompt.manner is not Manner.NORMAL)
+
+    def test_a_short_script_still_works(self, tmp_path: Path) -> None:
+        script = session(tmp_path, phrase_count=4).script()
+
+        assert len(script) == 4
+        assert script[0].manner is Manner.NORMAL
 
     def test_it_asks_for_the_configured_number(self, tmp_path: Path) -> None:
         assert len(session(tmp_path, phrase_count=8).script()) == 8
@@ -117,6 +149,51 @@ class TestJudgingTakes:
 
         assert enrol.collected == 0
         assert enrol.embed.calls == 0  # type: ignore[attr-defined]
+
+
+class TestCoverage:
+    def test_the_profile_records_what_it_heard(self, tmp_path: Path) -> None:
+        enrol = session(tmp_path, phrase_count=6)
+        for manner in (
+            Manner.NORMAL,
+            Manner.NORMAL,
+            Manner.QUIET,
+            Manner.QUIET,
+            Manner.DISTANT,
+            Manner.DISTANT,
+        ):
+            enrol.add(speech(), manner=manner)
+
+        profile = enrol.finish()
+
+        assert profile.covers == ("distant", "normal", "quiet")
+
+    def test_a_manner_whose_takes_were_all_rejected_is_not_claimed(self, tmp_path: Path) -> None:
+        """Claiming coverage that was never recorded is worse than none."""
+        enrol = session(tmp_path, phrase_count=5)
+        for _ in range(5):
+            enrol.add(speech(), manner=Manner.NORMAL)
+        enrol.add(speech(level=0.001), manner=Manner.QUIET)
+
+        assert enrol.finish().covers == ("normal",)
+
+    def test_one_manner_is_never_strong_however_tightly_it_agrees(self, tmp_path: Path) -> None:
+        """The exact trap the first profile fell into: 0.84 and narrow."""
+        enrol = session(tmp_path, phrase_count=6)
+        for _ in range(6):
+            enrol.add(speech(), manner=Manner.NORMAL)
+
+        profile = enrol.finish()
+
+        assert profile.cohesion > 0.9
+        assert profile.quality == "usable"
+
+    def test_a_varied_profile_can_be_strong(self, tmp_path: Path) -> None:
+        enrol = session(tmp_path, phrase_count=6)
+        for index in range(6):
+            enrol.add(speech(), manner=Manner.QUIET if index % 2 else Manner.NORMAL)
+
+        assert enrol.finish().quality == "strong"
 
 
 class TestBuildingTheProfile:

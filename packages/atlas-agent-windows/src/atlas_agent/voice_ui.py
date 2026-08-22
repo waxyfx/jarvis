@@ -35,7 +35,7 @@ from atlas_shared.enums import Language
 from atlas_voice.audio import SAMPLE_RATE
 from atlas_voice.capture import Microphone, list_input_devices
 from atlas_voice.engines.speaker import SherpaSpeaker
-from atlas_voice.enrollment import EnrollmentSession, TakeVerdict
+from atlas_voice.enrollment import EnrollmentSession, Prompt, TakeVerdict
 from atlas_voice.profile import Protector, VoiceProfileStore
 from atlas_voice.providers import VoiceEngineError
 
@@ -69,7 +69,7 @@ class EnrollmentWindow:
         self._store = store
         self._device = device
         self._session: EnrollmentSession | None = None
-        self._script: tuple[tuple[Language, str], ...] = ()
+        self._script: tuple[Prompt, ...] = ()
         self._index = 0
         self._results: queue.Queue[_Recorded | Exception] = queue.Queue()
         self._level = 0.0
@@ -163,10 +163,14 @@ class EnrollmentWindow:
             self._test_button.config(state="disabled")
             self._delete_button.config(state="disabled")
             return
+        # Coverage is shown next to cohesion because on its own cohesion
+        # misleads: a narrow profile scores highest of all.
+        covers = ", ".join(profile.covers) if profile.covers else "one way of speaking only"
         self._profile_label.config(
             text=(
                 f"Profile: {profile.phrases} phrases, {profile.quality} "
-                f"(cohesion {profile.cohesion:.2f}), created {profile.created_at}"
+                f"(cohesion {profile.cohesion:.2f}; heard {covers}), "
+                f"created {profile.created_at}"
             )
         )
         self._test_button.config(state="normal")
@@ -198,9 +202,13 @@ class EnrollmentWindow:
             self._finish()
             return
 
-        language, text = self._script[self._index]
-        tag = "English" if language is Language.EN else "Русский"
-        self._phrase.set(f"{tag}:\n\n{text}")
+        prompt = self._script[self._index]
+        tag = "English" if prompt.language is Language.EN else "Русский"
+        # The instruction goes above the line, not below it: people start
+        # reading the moment they see words, and by then it is too late to
+        # be told how.
+        lead = f"{prompt.hint}\n\n" if prompt.hint else ""
+        self._phrase.set(f"{lead}{tag}:\n\n{prompt.text}")
         done = self._session.collected
         total = self._session.phrase_count
         self._progress_text.set(f"Recorded {done} of {total}")
@@ -272,8 +280,8 @@ class EnrollmentWindow:
             self._show_phrase()
             return
 
-        _, text = self._script[self._index]
-        verdict = self._session.add(recorded.samples, phrase=text)
+        prompt = self._script[self._index]
+        verdict = self._session.add(recorded.samples, phrase=prompt.text, manner=prompt.manner)
         if not verdict.accepted:
             self._hint.set(verdict.advice or verdict.reason)
             self._retry_button.config(state="normal")

@@ -20,6 +20,14 @@ profile says so rather than pretending.
 **The recordings are deleted by default.** Once the profile exists the audio has
 served its purpose. Keeping it is possible and deliberate, never accidental.
 
+**The owner is asked to vary how they speak.** Not for realism's sake: a
+profile built from twelve takes at one distance and one volume describes one way
+of speaking, and the owner has several. The first real profile made here scored
+cohesion 0.84 — nominally excellent — and then scored 0.54 against its own owner
+speaking quietly, under a threshold of 0.55. It would have ignored him. So the
+script asks for a few takes quietly and a few from across the room, and the
+profile records which manners it heard.
+
 **Nothing leaves the machine.** Not the audio, not the embedding, not a summary
 of either. This module has no network access of any kind.
 """
@@ -28,6 +36,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 
 import numpy as np
@@ -37,7 +46,7 @@ from atlas_voice.audio import SAMPLE_RATE, write_wav
 from atlas_voice.profile import VoiceProfile, VoiceProfileStore, now
 from atlas_voice.providers import VoiceEngineError
 
-__all__ = ["PHRASES", "EnrollmentSession", "TakeVerdict"]
+__all__ = ["PHRASES", "EnrollmentSession", "Manner", "Prompt", "TakeVerdict"]
 
 #: What the person is asked to read. Mixed languages on purpose: the profile
 #: should hold up whichever they use, and Russian and English shape a voice
@@ -81,7 +90,71 @@ MINIMUM_RMS = 0.025
 MINIMUM_PEAK = 0.10
 #: A take whose embedding sits this far from the others was not the same voice,
 #: the same room, or the same microphone position.
+#:
+#: Kept deliberately loose now that the script asks for quiet and distant takes:
+#: those *should* sit further from the centroid, and dropping them would undo
+#: the coverage they were recorded for. It still catches a different person.
 OUTLIER_SIMILARITY = 0.45
+
+
+class Manner(StrEnum):
+    """How a phrase is to be spoken.
+
+    Each one is a region of the owner's voice that verification will meet in
+    daily use. A profile that never heard the quiet one will not recognise it.
+    """
+
+    NORMAL = "normal"
+    QUIET = "quiet"
+    DISTANT = "distant"
+
+    @property
+    def hint(self) -> str:
+        """Shown to the person, in words they can act on."""
+        return {
+            Manner.NORMAL: "",
+            Manner.QUIET: "Say this one quietly — as if someone nearby were asleep.",
+            Manner.DISTANT: "Say this one from where you normally sit, a metre or two back.",
+        }[self]
+
+
+@dataclass(frozen=True)
+class Prompt:
+    """One line to read, and how to read it."""
+
+    language: Language
+    text: str
+    manner: Manner = Manner.NORMAL
+
+    @property
+    def hint(self) -> str:
+        return self.manner.hint
+
+
+def _manner_plan(count: int) -> list[Manner]:
+    """Which take is spoken which way.
+
+    Roughly a sixth quiet and a sixth distant, never the first — the first take
+    is where people find their footing — and spread out rather than bunched at
+    the end, so a session abandoned halfway still has some coverage.
+    """
+    plan = [Manner.NORMAL] * count
+    varied = max(1, count // 6)
+    special = [Manner.QUIET] * varied + [Manner.DISTANT] * varied
+    if len(special) >= count:
+        special = special[: max(0, count - 2)]
+    if not special:
+        return plan
+
+    # Evenly spaced over everything after the first take.
+    span = count - 1
+    for position, manner in enumerate(special):
+        index = 1 + round(span * (position + 1) / (len(special) + 1))
+        while index < count and plan[index] is not Manner.NORMAL:
+            index += 1
+        if index < count:
+            plan[index] = manner
+    return plan
 
 
 @dataclass(frozen=True)
@@ -120,6 +193,7 @@ class EnrollmentSession:
 
     _embeddings: list[np.ndarray] = field(default_factory=list, init=False)
     _accepted: list[str] = field(default_factory=list, init=False)
+    _manners: list[Manner] = field(default_factory=list, init=False)
     _saved: list[Path] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
@@ -128,15 +202,22 @@ class EnrollmentSession:
 
     # ------------------------------------------------------------- prompting
 
-    def script(self) -> tuple[tuple[Language, str], ...]:
-        """The phrases to read, alternating between the languages."""
+    def script(self) -> tuple[Prompt, ...]:
+        """The phrases to read, alternating languages, with how to say each."""
         pools = {language: list(PHRASES[language]) for language in self.languages}
-        script: list[tuple[Language, str]] = []
+        manners = _manner_plan(self.phrase_count)
+        script: list[Prompt] = []
         index = 0
         while len(script) < self.phrase_count:
             language = list(self.languages)[index % len(self.languages)]
             pool = pools[language]
-            script.append((language, pool[(index // len(self.languages)) % len(pool)]))
+            script.append(
+                Prompt(
+                    language=language,
+                    text=pool[(index // len(self.languages)) % len(pool)],
+                    manner=manners[len(script)],
+                )
+            )
             index += 1
         return tuple(script)
 
@@ -164,8 +245,15 @@ class EnrollmentSession:
             return TakeVerdict(False, "too_quiet", seconds, peak, rms)
         return TakeVerdict(True, "", seconds, peak, rms)
 
-    def add(self, samples: np.ndarray, *, phrase: str = "") -> TakeVerdict:
-        """Judge a take and, if it passes, keep its embedding."""
+    def add(
+        self, samples: np.ndarray, *, phrase: str = "", manner: Manner = Manner.NORMAL
+    ) -> TakeVerdict:
+        """Judge a take and, if it passes, keep its embedding.
+
+        The level gate is the same whichever manner was asked for. A quiet take
+        that falls under it is not quiet, it is unusable, and the floor was
+        measured against this machine's actual noise rather than chosen.
+        """
         verdict = self.judge(samples)
         if not verdict.accepted:
             return verdict
@@ -177,6 +265,7 @@ class EnrollmentSession:
 
         self._embeddings.append(vector)
         self._accepted.append(phrase)
+        self._manners.append(manner)
         if self.keep_recordings and self.recordings_dir is not None:
             self.recordings_dir.mkdir(parents=True, exist_ok=True)
             path = self.recordings_dir / f"take_{len(self._embeddings):02d}.wav"
@@ -225,6 +314,7 @@ class EnrollmentSession:
             created_at=now(),
             model=str(getattr(self.embed, "model", "unknown")),
             dimensions=int(centroid.shape[0]),
+            covers=self._coverage(keep),
         )
         self.store.save(profile)
         self._discard_recordings()
@@ -241,6 +331,15 @@ class EnrollmentSession:
             raise VoiceEngineError("there is no profile to test against")
         return float(np.dot(profile.embedding, self.embed.embed(samples)))  # type: ignore[attr-defined]
 
+    def _coverage(self, keep: Sequence[int]) -> tuple[str, ...]:
+        """Which ways of speaking actually made it into the profile.
+
+        Taken from the takes that survived rather than from the script, because
+        a manner whose takes were all rejected was never heard.
+        """
+        seen = {self._manners[index] for index in keep if index < len(self._manners)}
+        return tuple(sorted(str(manner) for manner in seen))
+
     def _discard_recordings(self) -> None:
         if self.keep_recordings:
             return
@@ -252,6 +351,7 @@ class EnrollmentSession:
         """Give up part-way through, leaving nothing behind."""
         self._embeddings.clear()
         self._accepted.clear()
+        self._manners.clear()
         for path in self._saved:
             path.unlink(missing_ok=True)
         self._saved.clear()

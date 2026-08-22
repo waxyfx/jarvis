@@ -280,9 +280,7 @@ def main() -> None:
     voice.add_argument(
         "--device", type=int, default=None, help="input device index; the default is used otherwise"
     )
-    voice.add_argument(
-        "--list-devices", action="store_true", help="print the microphones and exit"
-    )
+    voice.add_argument("--list-devices", action="store_true", help="print the microphones and exit")
 
     args = parser.parse_args()
     settings = get_agent_settings()
