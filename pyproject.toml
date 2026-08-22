@@ -11,7 +11,7 @@ dependencies = [
     # extras exist to keep the *VPS* lean, not this machine. Without them a
     # plain `uv run` silently uninstalls piper and sherpa, and the voice tests
     # collapse with ModuleNotFoundError rather than skipping.
-    "atlas-voice[vad,wake,stt,tts]",
+    "atlas-voice[audio,vad,wake,stt,tts]",
 ]
 
 [tool.uv]

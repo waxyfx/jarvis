@@ -124,7 +124,7 @@ dependencies = [
     { name = "atlas-agent-windows" },
     { name = "atlas-backend" },
     { name = "atlas-shared" },
-    { name = "atlas-voice", extra = ["stt", "tts", "vad", "wake"] },
+    { name = "atlas-voice", extra = ["audio", "stt", "tts", "vad", "wake"] },
 ]
 
 [package.dev-dependencies]
@@ -155,7 +155,7 @@ requires-dist = [
     { name = "atlas-agent-windows", editable = "packages/atlas-agent-windows" },
     { name = "atlas-backend", editable = "packages/atlas-backend" },
     { name = "atlas-shared", editable = "packages/atlas-shared" },
-    { name = "atlas-voice", extras = ["vad", "wake", "stt", "tts"], editable = "packages/atlas-voice" },
+    { name = "atlas-voice", extras = ["audio", "vad", "wake", "stt", "tts"], editable = "packages/atlas-voice" },
 ]
 
 [package.metadata.requires-dev]

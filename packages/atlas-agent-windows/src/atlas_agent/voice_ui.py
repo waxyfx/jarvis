@@ -213,6 +213,9 @@ class EnrollmentWindow:
         self._hint.set("")
         self._record_button.config(state="disabled")
         self._retry_button.config(state="disabled")
+        # Rebuilt from the phrase rather than appended to whatever is on
+        # screen: appending stacked a second Recording line on every retry.
+        self._show_phrase()
         self._phrase.set(self._phrase.get() + "\n\n● Recording…")
 
         threading.Thread(target=self._capture, daemon=True).start()
