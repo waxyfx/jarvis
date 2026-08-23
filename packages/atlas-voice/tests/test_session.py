@@ -251,7 +251,7 @@ class TestBargeIn:
             wake_at=1, pattern="." + "#" * 60, config=config, player=never_ending(None)
         )
 
-        await feed(session, 12)
+        await feed(session, 11)
 
         assert any(event.kind == "barge_in" for event in session.events)
         assert session.states.state is VoiceState.LISTENING
@@ -376,3 +376,73 @@ class TestSpeakerVerification:
         await feed(session, 11)
 
         assert stt.calls == 1
+
+
+class TestExecutingState:
+    """The one state the engine cannot observe for itself.
+
+    From inside the session a turn that launches a program and a turn that
+    merely answers are the same thing: a wait on the responder. The agent's
+    tool runner is what knows the difference, so it reports it — and without
+    that report the person watches "Thinking" while a window opens in front of
+    them.
+    """
+
+    async def test_a_running_tool_shows_as_executing(self) -> None:
+        seen: list[VoiceState] = []
+
+        async def responder(transcript: Transcript) -> str:
+            session.note_executing()
+            seen.append(session.states.state)
+            session.note_executed()
+            seen.append(session.states.state)
+            return "Готово."
+
+        session, *_ = build(wake_at=1, pattern="." + "####" + "......", responder=responder)
+        await feed(session, 11)
+
+        assert seen == [VoiceState.EXECUTING, VoiceState.THINKING]
+
+    async def test_several_tools_do_not_end_early(self) -> None:
+        """The first to finish must not clear a state the others still need."""
+        seen: list[VoiceState] = []
+
+        async def responder(transcript: Transcript) -> str:
+            session.note_executing()
+            session.note_executing()
+            session.note_executed()
+            seen.append(session.states.state)
+            session.note_executed()
+            seen.append(session.states.state)
+            return "Готово."
+
+        session, *_ = build(wake_at=1, pattern="." + "####" + "......", responder=responder)
+        await feed(session, 11)
+
+        assert seen == [VoiceState.EXECUTING, VoiceState.THINKING]
+
+    async def test_a_tool_outside_a_turn_is_ignored(self) -> None:
+        """The backend can run tools for reasons unrelated to this conversation."""
+        session, *_ = build()
+
+        session.note_executing()
+
+        assert session.states.state is VoiceState.LISTENING
+
+    async def test_an_unreported_finish_does_not_strand_the_next_turn(self) -> None:
+        """A crash between start and finish would otherwise wedge the display."""
+        turns: list[VoiceState] = []
+
+        async def responder(transcript: Transcript) -> str:
+            if not turns:
+                session.note_executing()  # and never reports the end
+            turns.append(session.states.state)
+            return "Готово."
+
+        session, *_ = build(
+            wake_at=1, pattern="." + "####" + "......" + "####" + "......", responder=responder
+        )
+        await feed(session, 21)
+
+        assert turns[0] is VoiceState.EXECUTING
+        assert turns[-1] is VoiceState.THINKING

@@ -29,8 +29,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
+from collections import deque
 from collections.abc import Awaitable, Callable, Coroutine
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import numpy as np
@@ -125,6 +127,21 @@ class VoiceSession:
         self._speech_during_playback = 0
         #: Set while the assistant is talking, so barge-in has something to stop.
         self._playback: asyncio.Task[None] | None = None
+        #: How many tools are running. Counted rather than flagged, because one
+        #: turn can run several and the first to finish must not clear the state
+        #: while the others are still going.
+        self._executing = 0
+        #: Recent frames with the answer the VAD already gave for each. Kept so
+        #: a rewind can replay them without asking Silero twice — it is stateful,
+        #: and feeding it the same audio again would corrupt what it thinks it
+        #: has heard.
+        self._recent: deque[tuple[Frame, bool]] = deque(
+            maxlen=max(1, int(self._config.preroll_s * SAMPLE_RATE / FRAME_SAMPLES))
+        )
+        #: Frames from before the wake word that still have to go through the
+        #: segmenter. Held, not pushed immediately, because the acknowledgement
+        #: is playing and the segmenter belongs to the listening state.
+        self._rewound: list[tuple[Frame, bool]] = []
 
     # ------------------------------------------------------------------ state
 
@@ -156,6 +173,32 @@ class VoiceSession:
         self._reset_listening()
         self._emit("unmuted", str(actor))
 
+    def note_executing(self) -> None:
+        """A tool has started running on this machine.
+
+        Called by the agent's tool runner, because the voice engine cannot see
+        execution — from here a turn that runs a program and a turn that merely
+        answers look identical, and both are simply a wait. Without this the
+        Executing state would be unreachable and the person would watch
+        "Thinking" while a program opened in front of them.
+
+        Ignored unless a turn is in flight: a tool the backend triggered for
+        some other reason must not repaint this conversation.
+        """
+        if self.states.state is VoiceState.THINKING or self._executing:
+            self._executing += 1
+            if self.states.state is not VoiceState.EXECUTING:
+                self.states.to(VoiceState.EXECUTING)
+                self._emit("executing", "")
+
+    def note_executed(self) -> None:
+        """That tool has finished. The turn goes back to waiting on the model."""
+        if not self._executing:
+            return
+        self._executing -= 1
+        if self._executing == 0 and self.states.state is VoiceState.EXECUTING:
+            self.states.to(VoiceState.THINKING)
+
     # ----------------------------------------------------------------- audio
 
     async def push(self, frame: Frame) -> None:
@@ -168,6 +211,7 @@ class VoiceSession:
         self._elapsed = frame.ends_at
         self._preroll.push(frame)
         speaking = self._vad.is_speech(frame.samples)
+        self._recent.append((frame, speaking))
 
         if self.states.state is VoiceState.SPEAKING:
             await self._maybe_interrupt(speaking)
@@ -192,10 +236,25 @@ class VoiceSession:
         self._open = True
         self._last_activity = self._elapsed
         self._segmenter.reset()
+        # Everything back to the start of the sentence being spoken. If the
+        # command came in the same breath as the wake word, it is in here.
+        cutoff = max(0.0, self._sentence_started_at() - _LEAD_IN_S)
+        self._rewound = [pair for pair in self._recent if pair[0].started_at >= cutoff]
         self._emit("wake", f"{detection.label} at {detection.at:.2f}s")
         await self._acknowledge()
 
     async def _listen_for_command(self, frame: Frame, speaking: bool) -> None:
+        if self._rewound:
+            rewound, self._rewound = self._rewound, []
+            for old, was_speech in rewound:
+                chunk = self._segmenter.push(old, is_speech=was_speech)
+                if chunk is None:
+                    continue
+                # The whole command was already spoken by the time the wake word
+                # was recognised. Nothing more is coming; handle it now.
+                await self._handle(chunk.samples)
+                return
+
         if speaking:
             self._last_activity = self._elapsed
 
@@ -208,6 +267,10 @@ class VoiceSession:
             self._close_conversation("idle")
 
     async def _handle(self, samples: np.ndarray) -> None:
+        # Any leftover from a previous turn is stale by now. Without this a tool
+        # whose completion was never reported would leave every later turn
+        # stuck showing Executing.
+        self._executing = 0
         if not self._verified(samples, None):
             self._emit("rejected", "speaker not recognised")
             return
@@ -220,11 +283,16 @@ class VoiceSession:
             self._emit("stt_failed", type(error).__name__)
             return
 
-        if transcript.is_empty:
+        command = _without_wake_word(transcript.text)
+        if transcript.is_empty or not command:
+            # A transcript that was only the wake word is someone getting the
+            # assistant's attention. It was already acknowledged; answering it
+            # again would be talking to oneself.
             self.states.to(VoiceState.LISTENING)
-            self._emit("empty", "")
+            self._emit("empty", transcript.text[:40])
             return
 
+        transcript = replace(transcript, text=command)
         self._emit("heard", transcript.text)
         try:
             reply = await self._respond(transcript)
@@ -304,6 +372,31 @@ class VoiceSession:
 
     # ------------------------------------------------------------- internals
 
+    def _sentence_started_at(self) -> float:
+        """When the sentence now being spoken began.
+
+        Rewinding a fixed distance was the first attempt and it does not work:
+        the detector reports when it *decided*, which trails the word itself by
+        however long it took to be sure, and that varies with the voice. Half a
+        second was enough for one synthetic speaker and cut another off
+        mid-phrase, handing Whisper a fragment — which it answered by inventing
+        a fluent Russian sentence, because that is what Whisper does with
+        fragments. Walking back to the last real pause does not care how slow
+        the detector was.
+        """
+        gap_frames = max(1, int(_SENTENCE_GAP_S * SAMPLE_RATE / FRAME_SAMPLES))
+        start = self._elapsed
+        silent = 0
+        for frame, speaking in reversed(self._recent):
+            if speaking:
+                silent = 0
+                start = frame.started_at
+                continue
+            silent += 1
+            if silent > gap_frames:
+                break
+        return start
+
     def _verified(self, samples: np.ndarray, detection: Detection | None) -> bool:
         """Whose speech this is. Never whether the command is allowed."""
         if not self._config.verify_speaker or self._speaker is None:
@@ -326,6 +419,7 @@ class VoiceSession:
         if not self._open:
             return
         self._open = False
+        self._rewound.clear()
         self._segmenter.reset()
         self._wake.reset()
         self._emit("conversation_closed", why)
@@ -334,6 +428,30 @@ class VoiceSession:
 async def _wait_out(utterance: Utterance) -> None:
     """The default player: occupy exactly as long as the audio lasts."""
     await asyncio.sleep(utterance.duration_s)
+
+
+#: A pause this long ends a sentence, for the purpose of deciding how far to
+#: rewind. Short enough not to swallow the previous thing said, long enough to
+#: survive the gap between "Jarvis," and the command that follows it.
+_SENTENCE_GAP_S = 0.35
+#: Included ahead of the rewind point, so the first phoneme is not clipped.
+_LEAD_IN_S = 0.2
+
+#: Stripped from the front of a command. Said in one breath, the wake word is
+#: part of the sentence Whisper transcribes, and "Jarvis, open Chrome" should
+#: reach the model as "open Chrome". A transcript with nothing else in it was
+#: someone getting the assistant's attention, not asking for anything.
+_WAKE_WORDS = ("jarvis", "hey jarvis", "джарвис", "эй джарвис")
+
+
+def _without_wake_word(text: str) -> str:
+    """Drop a leading "Jarvis," from a command, keeping everything after it."""
+    stripped = text.strip()
+    for word in sorted(_WAKE_WORDS, key=len, reverse=True):
+        match = re.match(rf"^{word}\b[\s,.!?—-]*", stripped, flags=re.IGNORECASE)
+        if match:
+            return stripped[match.end() :].strip()
+    return stripped
 
 
 _ACKNOWLEDGEMENT = {Language.EN: "Yes, sir?", Language.RU: "Да, сэр?"}

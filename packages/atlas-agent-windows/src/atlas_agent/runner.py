@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import ValidationError
@@ -43,13 +44,33 @@ class ToolRunner:
         safe_mode: SafeModeController,
         path_guard: PathGuard,
         risk_context: RiskContext,
+        on_activity: Callable[[bool], None] | None = None,
     ) -> None:
         self._safe_mode = safe_mode
         self._context = ExecutionContext(path_guard=path_guard, risk_context=risk_context)
+        #: Told when a command starts and stops. The voice engine uses it to
+        #: show Executing rather than Thinking; nothing here depends on it, and
+        #: a listener that raises must not take the command down with it.
+        self._on_activity = on_activity
 
     async def run(self, command: ToolExecute) -> ToolResult:
         """Execute one command, always returning a result rather than raising."""
         started = time.monotonic()
+        self._notify(True)
+        try:
+            return await self._run(command, started)
+        finally:
+            self._notify(False)
+
+    def _notify(self, running: bool) -> None:
+        if self._on_activity is None:
+            return
+        try:
+            self._on_activity(running)
+        except Exception:  # pragma: no cover - a display cannot break execution
+            log.warning("tool_activity_listener_failed", running=running)
+
+    async def _run(self, command: ToolExecute, started: float) -> ToolResult:
 
         def finish(
             status: ToolStatus,

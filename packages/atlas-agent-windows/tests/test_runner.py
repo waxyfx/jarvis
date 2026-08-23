@@ -242,3 +242,70 @@ class TestFailureHandling:
             )
         )
         assert result.status in (ToolStatus.TIMEOUT, ToolStatus.OK)
+
+
+class TestActivityReporting:
+    """Whether the voice engine can tell Executing from Thinking.
+
+    It cannot see execution for itself: from inside a turn, running a program
+    and answering a question are both just a wait. The runner is what knows.
+    """
+
+    async def test_a_listener_is_told_when_a_command_starts_and_stops(
+        self, workspace: Path, controller: SafeModeController
+    ) -> None:
+        seen: list[bool] = []
+        runner = ToolRunner(
+            safe_mode=controller,
+            path_guard=PathGuard([workspace / "allowed"]),
+            risk_context=RiskContext(
+                allowed_roots=(str(workspace / "allowed"),),
+                executable_roots=(str(workspace / "programs"),),
+            ),
+            on_activity=seen.append,
+        )
+
+        await runner.run(command("system.metrics"))
+
+        assert seen == [True, False]
+
+    async def test_a_refused_command_still_reports_the_end(
+        self, workspace: Path, controller: SafeModeController
+    ) -> None:
+        """Otherwise the display sticks on Executing for a tool that never ran."""
+        seen: list[bool] = []
+        runner = ToolRunner(
+            safe_mode=controller,
+            path_guard=PathGuard([workspace / "allowed"]),
+            risk_context=RiskContext(
+                allowed_roots=(str(workspace / "allowed"),),
+                executable_roots=(str(workspace / "programs"),),
+            ),
+            on_activity=seen.append,
+        )
+
+        await runner.run(command("no.such.tool"))
+
+        assert seen == [True, False]
+
+    async def test_a_broken_listener_does_not_break_the_command(
+        self, workspace: Path, controller: SafeModeController
+    ) -> None:
+        """A display is not allowed to take execution down with it."""
+
+        def explode(_: bool) -> None:
+            raise RuntimeError("the tray fell over")
+
+        runner = ToolRunner(
+            safe_mode=controller,
+            path_guard=PathGuard([workspace / "allowed"]),
+            risk_context=RiskContext(
+                allowed_roots=(str(workspace / "allowed"),),
+                executable_roots=(str(workspace / "programs"),),
+            ),
+            on_activity=explode,
+        )
+
+        result = await runner.run(command("system.metrics"))
+
+        assert result.status is ToolStatus.OK

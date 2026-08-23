@@ -6,8 +6,10 @@ Silero scored 0.003 on speech and 0.004 on silence when it was fed the wrong
 input shape — a suite that only asserted "silence is not speech" would have gone
 green on a blind detector.
 
-Piper produces the speech, so the fixtures are deterministic, need no
-microphone, and cover both languages. They are cached under ``.models/fixtures``
+Piper produces the speech. It is *not* deterministic — see :func:`say` — so
+what makes these fixtures reproducible is the cache, not the synthesiser: each
+clip is generated once and read from disk forever after. They need no
+microphone and cover both languages. They are cached under ``.models/fixtures``
 because synthesis costs about two seconds per phrase; the directory is
 gitignored, since these are generated artefacts and not source.
 
@@ -18,6 +20,7 @@ collides on import when the whole suite runs.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -94,6 +97,34 @@ def speech(name: str) -> np.ndarray:
 
     model, text = PHRASES[name]
     audio = _synthesise(model, text)
+    FIXTURES.mkdir(parents=True, exist_ok=True)
+    write_wav(cached, audio)
+    return audio
+
+
+def say(model: Path, text: str, *, speaker_id: int | None = None) -> np.ndarray:
+    """Any phrase, synthesised once and then read from disk forever after.
+
+    Use this rather than :func:`_synthesise` in anything that asserts. Piper is
+    **not deterministic**: the same sentence, the same voice and the same
+    speaker produced clips of 27121, 28421, 26564 and 27121 samples on four
+    consecutive calls, no two of them identical. VITS samples its own phoneme
+    durations, and nothing in the API seeds that.
+
+    The consequences were not subtle. The wake word fired on one rendition of a
+    sentence and not the next, so an end-to-end suite passed and failed on the
+    same code; Whisper transcribed one rendition as English and another as
+    Russian. Both looked like bugs in the thing under test and neither was.
+    Caching to disk is what makes a green run mean something — and it is also
+    why a fixture that starts failing after a model upgrade should be deleted
+    and regenerated rather than argued with.
+    """
+    stem = hashlib.sha256(f"{model.stem}|{speaker_id}|{text}".encode()).hexdigest()[:16]
+    cached = FIXTURES / f"say_{stem}.wav"
+    if cached.is_file():
+        return read_wav(cached)
+
+    audio = _synthesise(model, text, speaker_id=speaker_id)
     FIXTURES.mkdir(parents=True, exist_ok=True)
     write_wav(cached, audio)
     return audio

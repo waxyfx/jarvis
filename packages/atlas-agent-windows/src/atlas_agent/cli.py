@@ -12,13 +12,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import signal
 import sys
 import threading
+from collections.abc import Callable
+from pathlib import Path
 
 from atlas_agent import autostart
 from atlas_agent.backend import BackendClient, BackendError
-from atlas_agent.config import AgentSettings, get_agent_settings
+from atlas_agent.config import AgentSettings, _state_dir, get_agent_settings
 from atlas_agent.identity import IdentityStore, IdentityStoreError
 from atlas_agent.logging import configure_logging, get_logger
 from atlas_agent.monitor import ActivityMonitor
@@ -29,6 +32,7 @@ from atlas_agent.transport import AgentTransport, FatalTransportError
 from atlas_agent.tray import DEFAULT_HOTKEY_LABEL, GlobalHotkey, TrayApplication
 from atlas_shared.auth import normalise_pairing_code
 from atlas_shared.tools.manifest import RiskContext
+from atlas_voice.profile import VoiceProfileStore
 
 log = get_logger(__name__)
 
@@ -141,7 +145,14 @@ def _autostart(action: str) -> int:
     return 0
 
 
-async def _run(settings: AgentSettings, *, with_tray: bool) -> int:
+async def _run(
+    settings: AgentSettings,
+    *,
+    with_tray: bool,
+    with_voice: bool = False,
+    input_device: int | None = None,
+    output_device: int | None = None,
+) -> int:
     store = _store(settings)
     identity = store.load()
     if identity is None or not identity.is_enrolled:
@@ -152,6 +163,14 @@ async def _run(settings: AgentSettings, *, with_tray: bool) -> int:
     if controller.is_safe:
         log.warning("agent_starting_in_safe_mode", reason=controller.current.reason)
 
+    # Set below if voice is running, so the engine can show Executing rather
+    # than Thinking while a program actually opens.
+    on_activity: Callable[[bool], None] | None = None
+
+    def report_activity(running: bool) -> None:
+        if on_activity is not None:
+            on_activity(running)
+
     runner = ToolRunner(
         safe_mode=controller,
         path_guard=PathGuard(
@@ -161,6 +180,7 @@ async def _run(settings: AgentSettings, *, with_tray: bool) -> int:
             allowed_roots=settings.allowed_file_roots,
             executable_roots=settings.allowed_executable_roots,
         ),
+        on_activity=report_activity,
     )
     monitor = ActivityMonitor(settings)
     transport = AgentTransport(
@@ -205,18 +225,62 @@ async def _run(settings: AgentSettings, *, with_tray: bool) -> int:
         tray_thread = threading.Thread(target=tray.run, name="atlas-tray", daemon=True)
         tray_thread.start()
 
+    voice_task: asyncio.Task[None] | None = None
+    if with_voice:
+        # In this process, not a second one. The voice path and the tool path
+        # are the same device: two processes would mean two connections for one
+        # identity, and the backend displaces the older -- so whichever started
+        # first would quietly stop working.
+        from atlas_agent.voice_runtime import VoiceModels, build_runtime
+
+        models = VoiceModels(root=Path(__file__).resolve().parents[4] / ".models")
+        absent = models.missing()
+        if absent:
+            print("Voice models are missing. Run scripts/fetch_voice_models.ps1")
+            for item in absent:
+                print(f"  - {item}")
+            return 1
+
+        print("Loading the voice models. This takes a moment.")
+        runtime = await build_runtime(
+            settings=settings,
+            identity=identity,
+            store=_voice_store(),
+            models=models,
+            input_device=input_device,
+            output_device=output_device,
+            on_event=lambda event: log.info("voice", kind=event.kind, detail=event.detail),
+        )
+        on_activity = lambda running: (  # noqa: E731 - one line, one purpose
+            runtime.session.note_executing() if running else runtime.session.note_executed()
+        )
+        runtime.session.states.observe(lambda transition: print(f"  [{transition.current.value}]"))
+        voice_task = asyncio.create_task(runtime.run(stop=stop))
+        print('Listening. Say "Jarvis".')
+
     try:
         await transport.run(stop=stop)
     except FatalTransportError as exc:
         log.error("agent_stopped", reason=str(exc))
         return 2
     finally:
+        if voice_task is not None:
+            voice_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await voice_task
         if hotkey is not None:
             hotkey.stop()
         tray.stop()
         if tray_thread is not None:
             tray_thread.join(timeout=3.0)
     return 0
+
+
+def _voice_store() -> VoiceProfileStore:
+    """The enrolled profile, under the same DPAPI the device key uses."""
+    from atlas_agent.voice_ui import _dpapi_protector
+
+    return VoiceProfileStore(_state_dir() / "voice_profile.bin", protector=_dpapi_protector())
 
 
 # ---------------------------------------------------------------------- main
@@ -267,6 +331,11 @@ def main() -> None:
 
     run = subcommands.add_parser("run", help="connect and stay connected")
     run.add_argument("--no-tray", action="store_true", help="run headless, without the tray icon")
+    run.add_argument(
+        "--voice", action="store_true", help="listen for the wake word and answer aloud"
+    )
+    run.add_argument("--input-device", type=int, default=None, help="microphone index")
+    run.add_argument("--output-device", type=int, default=None, help="speaker index")
 
     safe = subcommands.add_parser("safe-mode", help="local kill switch")
     safe.add_argument("action", choices=["on", "off", "status"])
@@ -298,7 +367,17 @@ def main() -> None:
         elif args.command == "autostart":
             sys.exit(_autostart(args.action))
         else:
-            sys.exit(asyncio.run(_run(settings, with_tray=not args.no_tray)))
+            sys.exit(
+                asyncio.run(
+                    _run(
+                        settings,
+                        with_tray=not args.no_tray,
+                        with_voice=args.voice,
+                        input_device=args.input_device,
+                        output_device=args.output_device,
+                    )
+                )
+            )
     except KeyboardInterrupt:
         sys.exit(130)
     except (BackendError, IdentityStoreError, autostart.AutostartError, ValueError) as exc:
