@@ -1,8 +1,14 @@
 """The wiring between the voice engines and the backend.
 
-No models here — those are measured in atlas-voice. What this file is about is
-the part that talks to the network and the part that decides what gets said
-aloud, both of which fail in ways a person notices and a model test would not.
+Mostly about the part that talks to the network and the part that decides what
+gets said aloud, both of which fail in ways a person notices and a model test
+would not. What the models themselves can do is measured in atlas-voice.
+
+The exception is at the bottom. ``build_runtime`` loads five models and wires
+them together, and it is what the launcher runs; before these tests nothing
+exercised it, so a mistyped model path would have been discovered by whoever
+double-clicked jarvis.bat. Those tests are slow and skip when the models are
+not downloaded.
 """
 
 from __future__ import annotations
@@ -16,7 +22,12 @@ import httpx
 import pytest
 
 from atlas_agent.config import AgentSettings
-from atlas_agent.voice_runtime import BackendVoice, VoiceModels, _spoken_reply
+from atlas_agent.voice_runtime import (
+    BackendVoice,
+    VoiceModels,
+    _spoken_reply,
+    build_runtime,
+)
 from atlas_shared.enums import Language
 from atlas_voice.providers import Transcript
 
@@ -236,3 +247,106 @@ class TestFindingTheModels:
 
     def test_the_paths_say_where_to_look(self, tmp_path: Path) -> None:
         assert all(str(tmp_path) in item for item in VoiceModels(root=tmp_path).missing())
+
+
+REPO = Path(__file__).resolve().parents[3]
+REAL_MODELS = VoiceModels(root=REPO / ".models")
+
+requires_models = pytest.mark.skipif(
+    bool(REAL_MODELS.missing()),
+    reason="run scripts/fetch_voice_models.ps1 to download the voice models",
+)
+
+
+class TestBuildingTheRuntime:
+    """Whether the thing jarvis.bat runs can actually be built.
+
+    Nothing else covers this. Every engine has its own tests and the session has
+    tests against fakes, but the function that loads five models and wires them
+    together had no test at all — so a name typed wrongly in a model path, or a
+    constructor argument that drifted, would first be discovered by the person
+    who double-clicked the launcher and watched it fail.
+    """
+
+    async def test_a_missing_model_is_named_rather_than_crashed_into(self, tmp_path: Path) -> None:
+        """The message has to say what to do, because it is read by someone who
+        has just installed this and has nothing else to go on."""
+        from atlas_voice.profile import VoiceProfileStore, plaintext_protector
+
+        store = VoiceProfileStore(tmp_path / "voice.bin", protector=plaintext_protector())
+
+        with pytest.raises(FileNotFoundError, match="fetch_voice_models"):
+            await build_runtime(
+                settings=settings(tmp_path),
+                identity=object(),  # type: ignore[arg-type]
+                store=store,
+                models=VoiceModels(root=tmp_path / "nothing-here"),
+            )
+
+    @requires_models
+    async def test_it_assembles_with_the_real_models(self, tmp_path: Path) -> None:
+        """Slow — it loads Whisper — and worth it: this is the launcher's path."""
+        from atlas_voice.profile import VoiceProfileStore, plaintext_protector
+        from atlas_voice.state import VoiceState
+
+        store = VoiceProfileStore(tmp_path / "voice.bin", protector=plaintext_protector())
+
+        async def responder(transcript: Transcript) -> str:
+            return "Done, sir."
+
+        runtime = await build_runtime(
+            settings=settings(tmp_path),
+            identity=object(),  # type: ignore[arg-type]
+            store=store,
+            models=REAL_MODELS,
+            responder=responder,
+        )
+
+        assert runtime.session.states.state is VoiceState.OFF
+        assert runtime.microphone is not None
+        assert runtime.loudspeaker is not None
+
+    @requires_models
+    async def test_verification_is_off_until_someone_has_enrolled(self, tmp_path: Path) -> None:
+        """Refusing every command before a profile exists would make the
+        assistant unusable during the one conversation needed to set it up."""
+        from atlas_voice.profile import VoiceProfileStore, plaintext_protector
+
+        store = VoiceProfileStore(tmp_path / "voice.bin", protector=plaintext_protector())
+
+        async def responder(transcript: Transcript) -> str:
+            return ""
+
+        runtime = await build_runtime(
+            settings=settings(tmp_path),
+            identity=object(),  # type: ignore[arg-type]
+            store=store,
+            models=REAL_MODELS,
+            responder=responder,
+        )
+
+        assert runtime.session._config.verify_speaker is False
+
+    @requires_models
+    async def test_the_session_and_the_runtime_share_one_loudspeaker(self, tmp_path: Path) -> None:
+        """Otherwise stopping the runtime does not stop what is being said.
+
+        The first version built two, so a shutdown mid-sentence kept talking
+        into a device nobody was holding a reference to.
+        """
+        from atlas_voice.profile import VoiceProfileStore, plaintext_protector
+
+        store = VoiceProfileStore(tmp_path / "voice.bin", protector=plaintext_protector())
+
+        async def responder(transcript: Transcript) -> str:
+            return ""
+
+        runtime = await build_runtime(
+            settings=settings(tmp_path),
+            identity=object(),  # type: ignore[arg-type]
+            store=store,
+            models=REAL_MODELS,
+            responder=responder,
+        )
+
+        assert runtime.session._player.__self__ is runtime.loudspeaker
