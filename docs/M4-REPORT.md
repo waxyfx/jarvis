@@ -371,13 +371,20 @@ architecture degraded correctly rather than pretending.
 
 | Suite | Result |
 |---|---|
-| `packages/atlas-voice` | 211 passing |
-| `packages/atlas-agent-windows` | 179 passing, including 14 new for the voice runtime |
+| `packages/atlas-voice` | 229 passing, including 18 new for the microphone path |
+| `packages/atlas-agent-windows` | 183 passing, including 18 new for the voice runtime |
 | `packages/atlas-backend` | 270 passing |
 | `packages/atlas-shared` | 211 passing |
 | `e2e/test_voice_e2e.py` | 13 passing, stable across repeated runs |
 | `e2e/test_gemini_live.py` | 38 skipped — daily allowance spent |
 | ruff / format / mypy | clean, 96 source files, 182 formatted |
+
+Two areas gained coverage that had none. `capture.py` — the microphone path,
+where a mistake produces silence rather than an error, and where every
+downstream test passes regardless because each supplies its own audio. And
+`build_runtime`, which loads five models and wires them together and is the
+whole of what the launcher does before the microphone opens; a mistyped model
+path would previously have been found by whoever double-clicked it.
 
 Four of the thirteen end-to-end scenarios are new: speaker verification driven
 through the real models rather than a stand-in embedder. A profile is built from
