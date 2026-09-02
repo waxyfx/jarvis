@@ -204,6 +204,57 @@ kept, the program named the way the tool catalogue names it.
 Where it will still disappoint: Whisper assigns one language per utterance.
 Between utterances detection is reliable; within one it is not.
 
+### Accuracy under noise
+
+The plan promised accuracy per signal-to-noise ratio and it had never been
+measured. `scripts/measure_stt_noise.py` does it: eight commands, mixed with
+pink noise and with babble — five other voices talking at once — at five ratios,
+scored as word error rate. The record is in
+[measurements/stt-noise.json](measurements/stt-noise.json).
+
+| SNR | English | Russian (synthetic) |
+|---|---|---|
+| 30 dB | **0.00** | 0.31 |
+| 20 dB | **0.00** | 0.31 |
+| 10 dB | **0.00** | 0.06 – 0.31 |
+| 5 dB | 0.00 – 0.04 | 0.25 |
+| 0 dB | 0.07 | 0.25 |
+
+**English is essentially unaffected by noise down to 5 dB**, where the noise is
+as loud as the speech within a factor of three. That is a real result and the
+mixer was verified before it was believed: asking for 0 dB produces a measured
+1.9 dB, the difference being the anti-clipping rescale.
+
+**The Russian figure is flat across every ratio, which means noise is not what
+is causing it.** The errors are the same in near silence as in babble. They come
+from the pairing of this recogniser with the synthetic Russian voice, and the
+worst of them is not a small one:
+
+| Spoken | Produced |
+|---|---|
+| «Открой блокнот.» | «Кропок нод.» — 9 times in 10 |
+| «Открой блокнот, пожалуйста.» | «**Закрой** Notepad, пожалуйста.» |
+| «Закрой блокнот.» | «Закрой Back Note.» |
+
+The second row is the one to look at. *Open* became *close*. Padding the clip
+with silence does not help and neither does making it longer, so the first
+explanation — that these utterances are simply too short — was tested and is
+wrong.
+
+**What this does not establish.** The speaker is `ru_RU-dmitri-medium`, a
+medium-quality synthesiser, not a person. A voice that pronounces «блокнот» in a
+way this recogniser hears as «бэкнот» tells you about that pairing and not about
+Whisper's Russian. These numbers are a lower bound. The honest next step is to
+measure against recordings of the actual owner, and until then no tuning should
+be done against them — fitting decoder settings to a synthesiser's artefacts is
+the same mistake as fitting a wake-word threshold to a pretty number.
+
+**What already contains it.** A misheard verb reaches the model as text and the
+model proposes a tool; `app.close` is MEDIUM and needs confirmation, so a
+"close" invented out of an "open" stops and asks. That is the Policy Engine
+doing exactly the job it exists for, and it is why recognition accuracy is a
+quality problem here rather than a safety one.
+
 ---
 
 ## 7. Conversation
@@ -353,5 +404,8 @@ Stated so it is not mistaken for an oversight:
 - **A measured wake-word figure for a real human voice.** The 592 clips are
   synthesised and recorded fixtures; the owner's own false-reject rate in daily
   use is unknown until it is used daily.
+- **Recognition accuracy for a real Russian speaker.** §6 measures a
+  synthesiser, and says so. The Russian figure is a lower bound and nothing
+  should be tuned against it.
 - **Personality Engine.** Roadmap only, deliberately after M4's critical path,
   and it will never touch Policy Engine, permissions, risk level or SAFE MODE.

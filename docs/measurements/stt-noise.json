@@ -1,0 +1,832 @@
+{
+  "measured_at": "2026-09-02T23:24:54+0500",
+  "model": "large-v3 int8_float16 cuda",
+  "summary": {
+    "pink": {
+      "snr30_en": 0.0,
+      "snr30_ru": 0.312,
+      "snr20_en": 0.0,
+      "snr20_ru": 0.312,
+      "snr10_en": 0.0,
+      "snr10_ru": 0.062,
+      "snr5_en": 0.036,
+      "snr5_ru": 0.25,
+      "snr0_en": 0.071,
+      "snr0_ru": 0.25
+    },
+    "babble": {
+      "snr30_en": 0.0,
+      "snr30_ru": 0.312,
+      "snr20_en": 0.0,
+      "snr20_ru": 0.312,
+      "snr10_en": 0.0,
+      "snr10_ru": 0.312,
+      "snr5_en": 0.0,
+      "snr5_ru": 0.25,
+      "snr0_en": 0.071,
+      "snr0_ru": 0.25
+    }
+  },
+  "rows": [
+    {
+      "noise": "pink",
+      "snr_db": 30,
+      "language": "en",
+      "spoken": "Open Notepad.",
+      "reference": "Open Notepad.",
+      "produced": "Open Notepad.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 30,
+      "language": "en",
+      "spoken": "Show me how much memory is left.",
+      "reference": "Show me how much memory is left.",
+      "produced": "Show me how much memory is left.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 30,
+      "language": "en",
+      "spoken": "Close Chrome and open the second document.",
+      "reference": "Close Chrome and open the second document.",
+      "produced": "Close Chrome and open the second document.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 30,
+      "language": "en",
+      "spoken": "Remind me to call back before six.",
+      "reference": "Remind me to call back before six.",
+      "produced": "Remind me to call back before 6.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 30,
+      "language": "ru",
+      "spoken": "Открой блокнот.",
+      "reference": "Открой Notepad.",
+      "produced": "Кропок нод.",
+      "detected_language": "ru",
+      "wer": 1.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 30,
+      "language": "ru",
+      "spoken": "Покажи, сколько осталось памяти.",
+      "reference": "Покажи, сколько осталось памяти.",
+      "produced": "Прожив сколько осталось памяти.",
+      "detected_language": "ru",
+      "wer": 0.25
+    },
+    {
+      "noise": "pink",
+      "snr_db": 30,
+      "language": "ru",
+      "spoken": "Закрой хром и открой второй документ.",
+      "reference": "Закрой Chrome и открой второй документ.",
+      "produced": "Закрой Chrome и открой второй документ.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 30,
+      "language": "ru",
+      "spoken": "Напомни перезвонить до шести.",
+      "reference": "Напомни перезвонить до шести.",
+      "produced": "Напомни перезвонить до 6.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 20,
+      "language": "en",
+      "spoken": "Open Notepad.",
+      "reference": "Open Notepad.",
+      "produced": "Open Notepad.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 20,
+      "language": "en",
+      "spoken": "Show me how much memory is left.",
+      "reference": "Show me how much memory is left.",
+      "produced": "Show me how much memory is left.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 20,
+      "language": "en",
+      "spoken": "Close Chrome and open the second document.",
+      "reference": "Close Chrome and open the second document.",
+      "produced": "Close Chrome and open the second document.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 20,
+      "language": "en",
+      "spoken": "Remind me to call back before six.",
+      "reference": "Remind me to call back before six.",
+      "produced": "Remind me to call back before 6.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 20,
+      "language": "ru",
+      "spoken": "Открой блокнот.",
+      "reference": "Открой Notepad.",
+      "produced": "Кропок нод.",
+      "detected_language": "ru",
+      "wer": 1.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 20,
+      "language": "ru",
+      "spoken": "Покажи, сколько осталось памяти.",
+      "reference": "Покажи, сколько осталось памяти.",
+      "produced": "Прожив сколько осталось памяти.",
+      "detected_language": "ru",
+      "wer": 0.25
+    },
+    {
+      "noise": "pink",
+      "snr_db": 20,
+      "language": "ru",
+      "spoken": "Закрой хром и открой второй документ.",
+      "reference": "Закрой Chrome и открой второй документ.",
+      "produced": "Закрой Chrome и открой второй документ.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 20,
+      "language": "ru",
+      "spoken": "Напомни перезвонить до шести.",
+      "reference": "Напомни перезвонить до шести.",
+      "produced": "Напомни перезвонить до 6.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 10,
+      "language": "en",
+      "spoken": "Open Notepad.",
+      "reference": "Open Notepad.",
+      "produced": "Open Notepad.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 10,
+      "language": "en",
+      "spoken": "Show me how much memory is left.",
+      "reference": "Show me how much memory is left.",
+      "produced": "Show me how much memory is left.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 10,
+      "language": "en",
+      "spoken": "Close Chrome and open the second document.",
+      "reference": "Close Chrome and open the second document.",
+      "produced": "Close Chrome and open the second document.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 10,
+      "language": "en",
+      "spoken": "Remind me to call back before six.",
+      "reference": "Remind me to call back before six.",
+      "produced": "Remind me to call back before 6.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 10,
+      "language": "ru",
+      "spoken": "Открой блокнот.",
+      "reference": "Открой Notepad.",
+      "produced": "Открой Notepad.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 10,
+      "language": "ru",
+      "spoken": "Покажи, сколько осталось памяти.",
+      "reference": "Покажи, сколько осталось памяти.",
+      "produced": "Прожив сколько осталось памяти.",
+      "detected_language": "ru",
+      "wer": 0.25
+    },
+    {
+      "noise": "pink",
+      "snr_db": 10,
+      "language": "ru",
+      "spoken": "Закрой хром и открой второй документ.",
+      "reference": "Закрой Chrome и открой второй документ.",
+      "produced": "Закрой Chrome и открой второй документ.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 10,
+      "language": "ru",
+      "spoken": "Напомни перезвонить до шести.",
+      "reference": "Напомни перезвонить до шести.",
+      "produced": "Напомни перезвонить до 6.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 5,
+      "language": "en",
+      "spoken": "Open Notepad.",
+      "reference": "Open Notepad.",
+      "produced": "Open Notepad.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 5,
+      "language": "en",
+      "spoken": "Show me how much memory is left.",
+      "reference": "Show me how much memory is left.",
+      "produced": "Show me how much memory is left.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 5,
+      "language": "en",
+      "spoken": "Close Chrome and open the second document.",
+      "reference": "Close Chrome and open the second document.",
+      "produced": "Close Chrome and open the second document.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 5,
+      "language": "en",
+      "spoken": "Remind me to call back before six.",
+      "reference": "Remind me to call back before six.",
+      "produced": "Remind me to call back people 6.",
+      "detected_language": "en",
+      "wer": 0.143
+    },
+    {
+      "noise": "pink",
+      "snr_db": 5,
+      "language": "ru",
+      "spoken": "Открой блокнот.",
+      "reference": "Открой Notepad.",
+      "produced": "Кнопок кнопок.",
+      "detected_language": "ru",
+      "wer": 1.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 5,
+      "language": "ru",
+      "spoken": "Покажи, сколько осталось памяти.",
+      "reference": "Покажи, сколько осталось памяти.",
+      "produced": "Покажи, сколько осталось памяти.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 5,
+      "language": "ru",
+      "spoken": "Закрой хром и открой второй документ.",
+      "reference": "Закрой Chrome и открой второй документ.",
+      "produced": "Закрой Chrome и открой второй документ.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 5,
+      "language": "ru",
+      "spoken": "Напомни перезвонить до шести.",
+      "reference": "Напомни перезвонить до шести.",
+      "produced": "Напомни перезвонить до 6.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 0,
+      "language": "en",
+      "spoken": "Open Notepad.",
+      "reference": "Open Notepad.",
+      "produced": "Open Notepad.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 0,
+      "language": "en",
+      "spoken": "Show me how much memory is left.",
+      "reference": "Show me how much memory is left.",
+      "produced": "Show me how much memory is left.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 0,
+      "language": "en",
+      "spoken": "Close Chrome and open the second document.",
+      "reference": "Close Chrome and open the second document.",
+      "produced": "Close Chrome and open the second document.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 0,
+      "language": "en",
+      "spoken": "Remind me to call back before six.",
+      "reference": "Remind me to call back before six.",
+      "produced": "Remind me to call back with the 6.",
+      "detected_language": "en",
+      "wer": 0.286
+    },
+    {
+      "noise": "pink",
+      "snr_db": 0,
+      "language": "ru",
+      "spoken": "Открой блокнот.",
+      "reference": "Открой Notepad.",
+      "produced": "Кнопка кнопки.",
+      "detected_language": "ru",
+      "wer": 1.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 0,
+      "language": "ru",
+      "spoken": "Покажи, сколько осталось памяти.",
+      "reference": "Покажи, сколько осталось памяти.",
+      "produced": "Покажи, сколько осталось памяти.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 0,
+      "language": "ru",
+      "spoken": "Закрой хром и открой второй документ.",
+      "reference": "Закрой Chrome и открой второй документ.",
+      "produced": "Закрой Chrome и открой второй документ.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "pink",
+      "snr_db": 0,
+      "language": "ru",
+      "spoken": "Напомни перезвонить до шести.",
+      "reference": "Напомни перезвонить до шести.",
+      "produced": "Напомни перезвонить до 6.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 30,
+      "language": "en",
+      "spoken": "Open Notepad.",
+      "reference": "Open Notepad.",
+      "produced": "Open Notepad.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 30,
+      "language": "en",
+      "spoken": "Show me how much memory is left.",
+      "reference": "Show me how much memory is left.",
+      "produced": "Show me how much memory is left.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 30,
+      "language": "en",
+      "spoken": "Close Chrome and open the second document.",
+      "reference": "Close Chrome and open the second document.",
+      "produced": "Close Chrome and open the second document.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 30,
+      "language": "en",
+      "spoken": "Remind me to call back before six.",
+      "reference": "Remind me to call back before six.",
+      "produced": "Remind me to call back before 6.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 30,
+      "language": "ru",
+      "spoken": "Открой блокнот.",
+      "reference": "Открой Notepad.",
+      "produced": "Кропок нод.",
+      "detected_language": "ru",
+      "wer": 1.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 30,
+      "language": "ru",
+      "spoken": "Покажи, сколько осталось памяти.",
+      "reference": "Покажи, сколько осталось памяти.",
+      "produced": "Прожив сколько осталось памяти.",
+      "detected_language": "ru",
+      "wer": 0.25
+    },
+    {
+      "noise": "babble",
+      "snr_db": 30,
+      "language": "ru",
+      "spoken": "Закрой хром и открой второй документ.",
+      "reference": "Закрой Chrome и открой второй документ.",
+      "produced": "Закрой Chrome и открой второй документ.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 30,
+      "language": "ru",
+      "spoken": "Напомни перезвонить до шести.",
+      "reference": "Напомни перезвонить до шести.",
+      "produced": "Напомни перезвонить до 6.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 20,
+      "language": "en",
+      "spoken": "Open Notepad.",
+      "reference": "Open Notepad.",
+      "produced": "Open Notepad.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 20,
+      "language": "en",
+      "spoken": "Show me how much memory is left.",
+      "reference": "Show me how much memory is left.",
+      "produced": "Show me how much memory is left.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 20,
+      "language": "en",
+      "spoken": "Close Chrome and open the second document.",
+      "reference": "Close Chrome and open the second document.",
+      "produced": "Close Chrome and open the second document.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 20,
+      "language": "en",
+      "spoken": "Remind me to call back before six.",
+      "reference": "Remind me to call back before six.",
+      "produced": "Remind me to call back before 6.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 20,
+      "language": "ru",
+      "spoken": "Открой блокнот.",
+      "reference": "Открой Notepad.",
+      "produced": "Кропок нот.",
+      "detected_language": "ru",
+      "wer": 1.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 20,
+      "language": "ru",
+      "spoken": "Покажи, сколько осталось памяти.",
+      "reference": "Покажи, сколько осталось памяти.",
+      "produced": "Прожив сколько осталось памяти.",
+      "detected_language": "ru",
+      "wer": 0.25
+    },
+    {
+      "noise": "babble",
+      "snr_db": 20,
+      "language": "ru",
+      "spoken": "Закрой хром и открой второй документ.",
+      "reference": "Закрой Chrome и открой второй документ.",
+      "produced": "Закрой Chrome и открой второй документ.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 20,
+      "language": "ru",
+      "spoken": "Напомни перезвонить до шести.",
+      "reference": "Напомни перезвонить до шести.",
+      "produced": "Напомни перезвонить до 6.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 10,
+      "language": "en",
+      "spoken": "Open Notepad.",
+      "reference": "Open Notepad.",
+      "produced": "Open Notepad.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 10,
+      "language": "en",
+      "spoken": "Show me how much memory is left.",
+      "reference": "Show me how much memory is left.",
+      "produced": "Show me how much memory is left.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 10,
+      "language": "en",
+      "spoken": "Close Chrome and open the second document.",
+      "reference": "Close Chrome and open the second document.",
+      "produced": "Close Chrome and open the second document.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 10,
+      "language": "en",
+      "spoken": "Remind me to call back before six.",
+      "reference": "Remind me to call back before six.",
+      "produced": "Remind me to call back before 6.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 10,
+      "language": "ru",
+      "spoken": "Открой блокнот.",
+      "reference": "Открой Notepad.",
+      "produced": "Кропок нот.",
+      "detected_language": "ru",
+      "wer": 1.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 10,
+      "language": "ru",
+      "spoken": "Покажи, сколько осталось памяти.",
+      "reference": "Покажи, сколько осталось памяти.",
+      "produced": "Прожив сколько осталось памяти.",
+      "detected_language": "ru",
+      "wer": 0.25
+    },
+    {
+      "noise": "babble",
+      "snr_db": 10,
+      "language": "ru",
+      "spoken": "Закрой хром и открой второй документ.",
+      "reference": "Закрой Chrome и открой второй документ.",
+      "produced": "Закрой Chrome и открой второй документ.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 10,
+      "language": "ru",
+      "spoken": "Напомни перезвонить до шести.",
+      "reference": "Напомни перезвонить до шести.",
+      "produced": "Напомни перезвонить до 6.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 5,
+      "language": "en",
+      "spoken": "Open Notepad.",
+      "reference": "Open Notepad.",
+      "produced": "Open Notepad.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 5,
+      "language": "en",
+      "spoken": "Show me how much memory is left.",
+      "reference": "Show me how much memory is left.",
+      "produced": "Show me how much memory is left.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 5,
+      "language": "en",
+      "spoken": "Close Chrome and open the second document.",
+      "reference": "Close Chrome and open the second document.",
+      "produced": "Close Chrome and open the second document.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 5,
+      "language": "en",
+      "spoken": "Remind me to call back before six.",
+      "reference": "Remind me to call back before six.",
+      "produced": "Remind me to call back before 6.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 5,
+      "language": "ru",
+      "spoken": "Открой блокнот.",
+      "reference": "Открой Notepad.",
+      "produced": "Кнопа кнопки.",
+      "detected_language": "ru",
+      "wer": 1.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 5,
+      "language": "ru",
+      "spoken": "Покажи, сколько осталось памяти.",
+      "reference": "Покажи, сколько осталось памяти.",
+      "produced": "Покажи, сколько осталось памяти.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 5,
+      "language": "ru",
+      "spoken": "Закрой хром и открой второй документ.",
+      "reference": "Закрой Chrome и открой второй документ.",
+      "produced": "Закрой Chrome и открой второй документ.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 5,
+      "language": "ru",
+      "spoken": "Напомни перезвонить до шести.",
+      "reference": "Напомни перезвонить до шести.",
+      "produced": "Напомни перезвонить до 6.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 0,
+      "language": "en",
+      "spoken": "Open Notepad.",
+      "reference": "Open Notepad.",
+      "produced": "Open Notepad.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 0,
+      "language": "en",
+      "spoken": "Show me how much memory is left.",
+      "reference": "Show me how much memory is left.",
+      "produced": "Show me how much memory is left.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 0,
+      "language": "en",
+      "spoken": "Close Chrome and open the second document.",
+      "reference": "Close Chrome and open the second document.",
+      "produced": "Close Chrome and open the second document.",
+      "detected_language": "en",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 0,
+      "language": "en",
+      "spoken": "Remind me to call back before six.",
+      "reference": "Remind me to call back before six.",
+      "produced": "Let me call back before 6.",
+      "detected_language": "en",
+      "wer": 0.286
+    },
+    {
+      "noise": "babble",
+      "snr_db": 0,
+      "language": "ru",
+      "spoken": "Открой блокнот.",
+      "reference": "Открой Notepad.",
+      "produced": "",
+      "detected_language": "en",
+      "wer": 1.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 0,
+      "language": "ru",
+      "spoken": "Покажи, сколько осталось памяти.",
+      "reference": "Покажи, сколько осталось памяти.",
+      "produced": "Покажи, сколько осталось памяти.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 0,
+      "language": "ru",
+      "spoken": "Закрой хром и открой второй документ.",
+      "reference": "Закрой Chrome и открой второй документ.",
+      "produced": "Закрой Chrome и открой второй документ.",
+      "detected_language": "ru",
+      "wer": 0.0
+    },
+    {
+      "noise": "babble",
+      "snr_db": 0,
+      "language": "ru",
+      "spoken": "Напомни перезвонить до шести.",
+      "reference": "Напомни перезвонить до шести.",
+      "produced": "Напомни перезвонить до 6.",
+      "detected_language": "ru",
+      "wer": 0.0
+    }
+  ]
+}
