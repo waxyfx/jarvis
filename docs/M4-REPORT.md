@@ -20,9 +20,9 @@ microphone → wake word → VAD → segmenter → speaker check → Whisper
            → Piper → speakers
 ```
 
-`e2e/test_voice_e2e.py` drives that whole path — nine scenarios, all passing —
-with the real detector, the real VAD, the real Whisper, a real backend on a real
-socket, real policy, real signatures and a real agent. Two things are stood in
+`e2e/test_voice_e2e.py` drives that whole path — thirteen scenarios, all
+passing — with the real detector, the real VAD, the real Whisper, a real backend
+on a real socket, real policy, real signatures and a real agent. Two things are stood in
 for, both because a test cannot contain a person: the speaker is Piper, and the
 model is scripted. Neither substitution is hidden and each is argued for in the
 file's own docstring.
