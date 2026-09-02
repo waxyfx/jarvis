@@ -451,3 +451,167 @@ class TestLanguages:
         await say_to(session, waking("Jarvis, what is the time?"))
 
         assert heard[0]["language"] == Language.EN.value
+
+
+#: Enrolled in the verification tests below, and the voice that then speaks.
+ENROLLED_VOICE = 200
+#: Someone else, who also wakes the detector — so a rejection is a decision
+#: about whose voice it is, not a detector that failed to hear anything.
+STRANGER_VOICE = 333
+
+#: Ordinary sentences, long enough to characterise a voice. Nothing worth
+#: overhearing, exactly as in the real enrollment script.
+ENROLLMENT_PHRASES = (
+    "Good morning, this is a test of the voice profile.",
+    "Open the second document and check the totals.",
+    "The meeting has been moved to Thursday afternoon.",
+    "Remind me to call back before six o'clock.",
+    "Show me how much disk space is left on this machine.",
+    "That is all for now, thank you very much.",
+)
+
+
+class TestWhoseVoiceItListensTo:
+    """Speaker verification, through the real models rather than fakes.
+
+    The unit tests drive this with a stand-in embedder, which proves the flow
+    and proves nothing about whether the model can tell two people apart. Here
+    a profile is built from one synthetic voice and a different one tries to
+    use it.
+
+    A synthetic stranger is a weak stand-in for a real impostor and this is not
+    an impostor rate — the owner's own measurements live in docs/M4-REPORT.md.
+    What it does establish is that the rejection path is wired up and reached:
+    that a voice which is not the enrolled one gets as far as verification, is
+    turned away there, and that the turning away is recorded rather than
+    silent. Measured separation on these voices is 0.85 for the enrolled one
+    against 0.13-0.34 for the others, so the threshold at 0.55 is not being
+    asked to split hairs.
+    """
+
+    @pytest.fixture
+    def enrolled(self, tmp_path: Path) -> tuple[Any, Any]:
+        from atlas_voice.engines.speaker import SherpaSpeaker
+        from atlas_voice.enrollment import EnrollmentSession
+        from atlas_voice.profile import VoiceProfileStore, plaintext_protector
+
+        store = VoiceProfileStore(tmp_path / "voice.bin", protector=plaintext_protector())
+        engine = SherpaSpeaker(MODELS.speaker, store=store)
+        session = EnrollmentSession(
+            embed=engine, store=store, phrase_count=len(ENROLLMENT_PHRASES)
+        )
+        for phrase in ENROLLMENT_PHRASES:
+            verdict = session.add(
+                say(PIPER_MULTI, phrase, speaker_id=ENROLLED_VOICE), phrase=phrase
+            )
+            assert verdict.accepted, f"synthetic take rejected: {verdict.reason}"
+        session.finish()
+        return engine, store
+
+    def _session(self, stt: WhisperSTT, tts: PiperTTS, speaker: Any, heard: list[str]) -> Any:
+        async def responder(transcript: Transcript) -> str:
+            heard.append(transcript.text)
+            return "Done, sir."
+
+        return VoiceSession(
+            wake=SherpaKeywordSpotter(
+                MODELS.wake, phrases=WAKE_KEYWORDS, threshold=WAKE_THRESHOLD
+            ),
+            vad=SileroVAD(MODELS.vad),
+            stt=stt,
+            tts=tts,
+            speaker=speaker,
+            responder=responder,
+            config=SessionConfig(verify_speaker=True, idle_timeout_s=30.0),
+            player=Recorder(),
+        )
+
+    async def test_the_enrolled_voice_is_acted_on(
+        self,
+        enrolled: tuple[Any, Any],
+        stt: WhisperSTT,
+        tts: PiperTTS,
+    ) -> None:
+        engine, _ = enrolled
+        heard: list[str] = []
+        session = self._session(stt, tts, engine, heard)
+        session.start()
+
+        audio = spoken("Jarvis, open Notepad.", speaker=ENROLLED_VOICE)
+        if not _wakes(audio):
+            pytest.skip("the enrolled voice does not wake the detector on this phrase")
+        await say_to(session, audio)
+
+        assert heard, "the enrolled voice was not acted on"
+
+    async def test_another_voice_is_not_acted_on(
+        self,
+        enrolled: tuple[Any, Any],
+        stt: WhisperSTT,
+        tts: PiperTTS,
+    ) -> None:
+        engine, _ = enrolled
+        heard: list[str] = []
+        session = self._session(stt, tts, engine, heard)
+        session.start()
+
+        audio = spoken("Jarvis, open Notepad.", speaker=STRANGER_VOICE)
+        if not _wakes(audio):
+            pytest.skip("the stranger does not wake the detector; nothing to reject")
+        await say_to(session, audio)
+
+        assert heard == [], "someone else's command reached the model"
+
+    async def test_a_rejection_is_recorded_rather_than_silent(
+        self,
+        enrolled: tuple[Any, Any],
+        stt: WhisperSTT,
+        tts: PiperTTS,
+    ) -> None:
+        """Silence here looks exactly like a detector that never fired.
+
+        Which of the two happened is the difference between "it cannot hear me"
+        and "it does not think I am me", and only one of those is fixed by
+        speaking louder.
+        """
+        engine, _ = enrolled
+        heard: list[str] = []
+        session = self._session(stt, tts, engine, heard)
+        session.start()
+
+        audio = spoken("Jarvis, open Notepad.", speaker=STRANGER_VOICE)
+        if not _wakes(audio):
+            pytest.skip("the stranger does not wake the detector; nothing to reject")
+        await say_to(session, audio)
+
+        rejections = [event for event in session.events if event.kind == "rejected"]
+        assert rejections, "the refusal left no trace"
+        assert "speaker" in rejections[0].detail
+
+    async def test_verification_does_not_decide_what_may_be_done(
+        self,
+        enrolled: tuple[Any, Any],
+        stt: WhisperSTT,
+        tts: PiperTTS,
+    ) -> None:
+        """Recognising the owner is not the same as authorising the action.
+
+        Asserted here because it is the assumption most likely to be quietly
+        broken later: the session's job is to decide whose speech to pass on,
+        and it hands the text to the same endpoint typed input uses. Nothing
+        about passing verification travels with it.
+        """
+        engine, _ = enrolled
+        heard: list[str] = []
+        session = self._session(stt, tts, engine, heard)
+        session.start()
+
+        audio = spoken("Jarvis, open Notepad.", speaker=ENROLLED_VOICE)
+        if not _wakes(audio):
+            pytest.skip("the enrolled voice does not wake the detector on this phrase")
+        await say_to(session, audio)
+
+        assert heard, "nothing was passed on"
+        # A plain string is all that leaves the voice engine. No score, no
+        # verdict, no flag that a policy could later be tempted to read.
+        assert all(isinstance(text, str) for text in heard)

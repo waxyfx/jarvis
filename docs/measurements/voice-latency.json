@@ -1,0 +1,156 @@
+{
+  "measured_at": "2026-09-02T23:07:10+0500",
+  "listening": {
+    "audio_seconds": 60,
+    "wall_seconds": 1.82,
+    "realtime_factor": 0.0303,
+    "duty_cycle_percent_of_one_core": 3.03,
+    "cpu_percent_while_running": 98.2,
+    "rss_growth_mb": 7.2
+  },
+  "stages": {
+    "per_utterance": {
+      "en_short": {
+        "text": "Open Notepad.",
+        "audio_seconds": 0.79,
+        "transcript": "Open Notepad.",
+        "language": "en",
+        "stt": {
+          "name": "stt",
+          "unit": "ms",
+          "n": 3,
+          "median": 683.3,
+          "p90": 686.8,
+          "max": 686.8
+        },
+        "tts": {
+          "name": "tts",
+          "unit": "ms",
+          "n": 3,
+          "median": 84.2,
+          "p90": 86.4,
+          "max": 86.4
+        },
+        "reply_audio_seconds": 1.88
+      },
+      "en_medium": {
+        "text": "Open Notepad and show me how much memory is left.",
+        "audio_seconds": 2.02,
+        "transcript": "Open Notepad and show me how much memory is left.",
+        "language": "en",
+        "stt": {
+          "name": "stt",
+          "unit": "ms",
+          "n": 3,
+          "median": 849.7,
+          "p90": 890.5,
+          "max": 890.5
+        },
+        "tts": {
+          "name": "tts",
+          "unit": "ms",
+          "n": 3,
+          "median": 89.3,
+          "p90": 96.0,
+          "max": 96.0
+        },
+        "reply_audio_seconds": 1.86
+      },
+      "en_long": {
+        "text": "Open Chrome, then show me how much disk space is left on this machine, please.",
+        "audio_seconds": 3.87,
+        "transcript": "Open Chrome, then show me how much disk space is left on this machine, please.",
+        "language": "en",
+        "stt": {
+          "name": "stt",
+          "unit": "ms",
+          "n": 3,
+          "median": 959.5,
+          "p90": 965.6,
+          "max": 965.6
+        },
+        "tts": {
+          "name": "tts",
+          "unit": "ms",
+          "n": 3,
+          "median": 87.5,
+          "p90": 90.7,
+          "max": 90.7
+        },
+        "reply_audio_seconds": 1.75
+      },
+      "ru_short": {
+        "text": "Открой блокнот.",
+        "audio_seconds": 0.75,
+        "transcript": "Кропок нод.",
+        "language": "ru",
+        "stt": {
+          "name": "stt",
+          "unit": "ms",
+          "n": 3,
+          "median": 725.0,
+          "p90": 728.5,
+          "max": 728.5
+        },
+        "tts": {
+          "name": "tts",
+          "unit": "ms",
+          "n": 3,
+          "median": 63.0,
+          "p90": 64.0,
+          "max": 64.0
+        },
+        "reply_audio_seconds": 1.18
+      },
+      "ru_medium": {
+        "text": "Открой блокнот и покажи, сколько осталось памяти.",
+        "audio_seconds": 2.45,
+        "transcript": "Открой Notepad и покажи, сколько осталось памяти.",
+        "language": "ru",
+        "stt": {
+          "name": "stt",
+          "unit": "ms",
+          "n": 3,
+          "median": 938.7,
+          "p90": 942.2,
+          "max": 942.2
+        },
+        "tts": {
+          "name": "tts",
+          "unit": "ms",
+          "n": 3,
+          "median": 64.3,
+          "p90": 71.2,
+          "max": 71.2
+        },
+        "reply_audio_seconds": 1.2
+      }
+    },
+    "stt_overall": {
+      "name": "stt",
+      "unit": "ms",
+      "n": 15,
+      "median": 849.7,
+      "p90": 959.5,
+      "max": 965.6
+    },
+    "tts_overall": {
+      "name": "tts",
+      "unit": "ms",
+      "n": 15,
+      "median": 83.2,
+      "p90": 90.7,
+      "max": 96.0
+    }
+  },
+  "fixed_costs": {
+    "end_of_speech_wait_ms": 700.0,
+    "wake_detection_median_ms": 233,
+    "note": "The end-of-speech wait is how long silence must last before the utterance is considered finished. It is paid on every command and is pure latency; shortening it makes the assistant interrupt people who pause mid-sentence."
+  },
+  "local_round_trip": {
+    "unit": "ms",
+    "median": 1632.9,
+    "note": "Everything between the last word spoken and the first word answered, except the model. The model is a network call and is measured elsewhere; this is the part the machine owns."
+  }
+}

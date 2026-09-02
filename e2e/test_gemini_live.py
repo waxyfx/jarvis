@@ -20,6 +20,13 @@ problem. The Policy Engine and the agent stand behind every proposal either way.
 Skipped unless ``ATLAS_GEMINI_API_KEY`` is set:
 
     uv run pytest e2e/test_gemini_live.py -v
+
+The full file does not fit in the free tier's daily allowance — see ``core``
+below, and use ``-m core`` for a run that does. What happens when the allowance
+runs out mid-run is handled rather than suffered: the remaining scenarios are
+*skipped*, not failed. A suite that goes red for billing reasons teaches people
+to stop reading it, and "not measured" is the honest word for a question nobody
+was allowed to ask.
 """
 
 from __future__ import annotations
@@ -62,7 +69,14 @@ requires_key = pytest.mark.skipif(
     reason="set ATLAS_GEMINI_API_KEY in .env to run the live acceptance test",
 )
 
-pytestmark = [requires_key, pytest.mark.live]
+pytestmark = [
+    requires_key,
+    pytest.mark.live,
+    # Skips the rest of the run once the day's free requests are gone, so a
+    # spent allowance reads as "not measured" rather than "wrong". See
+    # LiveAllowance in e2e/conftest.py.
+    pytest.mark.usefixtures("within_live_allowance"),
+]
 
 #: Free-tier Gemini allows a low requests-per-minute rate. The provider retries
 #: a 429, but a whole suite firing as fast as it can would spend its time

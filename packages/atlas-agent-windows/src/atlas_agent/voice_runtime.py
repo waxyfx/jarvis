@@ -26,6 +26,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -45,7 +46,13 @@ from atlas_voice.profile import VoiceProfileStore
 from atlas_voice.providers import Transcript
 from atlas_voice.session import SessionConfig, SessionEvent, VoiceSession
 
-__all__ = ["BackendVoice", "VoiceModels", "VoiceRuntime", "build_runtime"]
+__all__ = [
+    "DEFAULT_TURN_TIMEOUT_S",
+    "BackendVoice",
+    "VoiceModels",
+    "VoiceRuntime",
+    "build_runtime",
+]
 
 log = get_logger(__name__)
 
@@ -55,6 +62,18 @@ log = get_logger(__name__)
 #: and a median 0.233 s to fire. Changing any of it invalidates that acceptance.
 WAKE_KEYWORDS: tuple[str, ...] = ("HEY JARVIS", "JARVIS")
 WAKE_THRESHOLD = 0.25
+
+#: How long a spoken turn may take before the engine gives up on it.
+#:
+#: Much shorter than a typed request would tolerate, and deliberately so. The
+#: failure this bounds is not a refused connection — that returns at once and is
+#: apologised for — but a backend that accepts the request and then says
+#: nothing. Someone waiting for a spoken answer has no scrollbar, no spinner
+#: they can interrogate and nothing to read; they have silence, and silence is
+#: indistinguishable from an assistant that did not hear them. The backend's own
+#: turn timeout is 90 s, so a turn cut off here was already going to be
+#: abandoned there; this only decides whether the person finds out.
+DEFAULT_TURN_TIMEOUT_S = 45.0
 
 
 @dataclass(frozen=True)
@@ -116,12 +135,16 @@ class BackendVoice:
         settings: AgentSettings,
         identity: DeviceIdentity,
         *,
-        timeout_s: float = 120.0,
+        timeout_s: float = DEFAULT_TURN_TIMEOUT_S,
+        client: Any | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._settings = settings
         self._identity = identity
         self._timeout = timeout_s
-        self._client = BackendClient(settings)
+        self._client = client or BackendClient(settings)
+        #: Injected by tests. A real one is built per request otherwise.
+        self._transport = transport
         self._token: str | None = None
         self.last: dict[str, object] | None = None
 
@@ -149,6 +172,7 @@ class BackendVoice:
             base_url=self._settings.backend_url,
             timeout=self._timeout,
             verify=self._settings.verify_tls,
+            transport=self._transport,
         ) as client:
             response = await client.post(
                 "/v1/assistant/message",

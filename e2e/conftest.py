@@ -185,3 +185,84 @@ async def live_backend(allowed_file_roots: tuple[str, ...]) -> AsyncIterator[str
             if not thread.is_alive():
                 break
             await asyncio.sleep(0.05)
+
+
+# --------------------------------------------------------------- live quota
+
+
+class LiveAllowance:
+    """Whether the day's free-tier requests are gone.
+
+    Gemini's free tier allows 20 generate requests per day per model — the 429
+    names the quota ``GenerateRequestsPerDayPerProjectPerModel-FreeTier``. The
+    live acceptance file has more scenarios than that, so a full run will hit
+    the wall partway through, and every scenario after it used to fail. That is
+    the worst way to report it: a suite red for billing reasons is a suite
+    nobody reads.
+
+    So a refusal is reported as a skip and the rest of the run is skipped with
+    it. The difference between "the model chose wrongly" and "we were never
+    allowed to ask" is the entire value of the run.
+
+    The cost of this is real and worth stating: a provider that is genuinely
+    down, rather than merely rationed, also reads as "not measured". That is
+    the right answer for both — neither tells you anything about the model —
+    but it does mean a green run here is only evidence when the skip count is
+    zero.
+    """
+
+    #: Markers of a refusal rather than a wrong answer. Deliberately narrow:
+    #: anything broader would swallow real failures as "quota".
+    _SIGNS = ("429", "quota", "provider_unavailable", "resource_exhausted")
+
+    def __init__(self) -> None:
+        self.spent = False
+
+    def looks_like_exhaustion(self, text: str) -> bool:
+        lowered = text.lower()
+        return any(sign in lowered for sign in self._SIGNS)
+
+    @property
+    def reason(self) -> str:
+        return (
+            "the Gemini free tier allows 20 requests per day per model "
+            "(GenerateRequestsPerDayPerProjectPerModel-FreeTier) and they are spent; "
+            "this scenario was not measured. Use -m core for a run that fits, or "
+            "come back tomorrow."
+        )
+
+
+LIVE_ALLOWANCE = LiveAllowance()
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):  # type: ignore[no-untyped-def]
+    """Notice a quota refusal, so the scenarios after it can be skipped.
+
+    A fixture cannot do this: an exception raised in the test body does not
+    travel back through the fixture's ``yield``, so the fixture never sees the
+    failure it is supposed to react to. The report hook does.
+    """
+    outcome = yield
+    report = outcome.get_result()
+    if report.when == "call" and report.failed and "live" in item.keywords:
+        if LIVE_ALLOWANCE.looks_like_exhaustion(str(report.longrepr)):
+            LIVE_ALLOWANCE.spent = True
+            # The one that discovers the wall is rewritten too. Leaving it red
+            # would keep exactly the property this exists to remove: a failure
+            # that means "the bill ran out" sitting among failures that mean
+            # "the model was wrong", indistinguishable at a glance.
+            report.outcome = "skipped"
+            report.longrepr = (
+                item.location[0],
+                item.location[1] or 0,
+                f"Skipped: {LIVE_ALLOWANCE.reason}",
+            )
+
+
+@pytest.fixture
+def within_live_allowance() -> Iterator[None]:
+    """Skip once the allowance is gone. Applied by the live file's pytestmark."""
+    if LIVE_ALLOWANCE.spent:
+        pytest.skip(LIVE_ALLOWANCE.reason)
+    yield
