@@ -497,9 +497,7 @@ class TestWhoseVoiceItListensTo:
 
         store = VoiceProfileStore(tmp_path / "voice.bin", protector=plaintext_protector())
         engine = SherpaSpeaker(MODELS.speaker, store=store)
-        session = EnrollmentSession(
-            embed=engine, store=store, phrase_count=len(ENROLLMENT_PHRASES)
-        )
+        session = EnrollmentSession(embed=engine, store=store, phrase_count=len(ENROLLMENT_PHRASES))
         for phrase in ENROLLMENT_PHRASES:
             verdict = session.add(
                 say(PIPER_MULTI, phrase, speaker_id=ENROLLED_VOICE), phrase=phrase
@@ -514,9 +512,7 @@ class TestWhoseVoiceItListensTo:
             return "Done, sir."
 
         return VoiceSession(
-            wake=SherpaKeywordSpotter(
-                MODELS.wake, phrases=WAKE_KEYWORDS, threshold=WAKE_THRESHOLD
-            ),
+            wake=SherpaKeywordSpotter(MODELS.wake, phrases=WAKE_KEYWORDS, threshold=WAKE_THRESHOLD),
             vad=SileroVAD(MODELS.vad),
             stt=stt,
             tts=tts,
