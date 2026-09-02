@@ -354,7 +354,12 @@ What was done about it: a quota refusal is now reported as a **skip**, not a
 failure, and the rest of the run is skipped with it. A suite that goes red for
 billing reasons teaches people to stop reading it, and "not measured" is the
 honest word for a question nobody was allowed to ask. A 38-skip run is the
-current state; `-m core` runs the reduced set that fits inside a day.
+current state.
+
+`-m core` runs the reduced set that fits inside a day: 14 scenarios, of which 12
+ask the model directly for one request each and 2 drive the whole pipeline for
+two or three. Around 17 of the 20, which fits — with little enough margin that
+adding a scenario to the core set means checking this arithmetic again.
 
 The cost of that choice, stated plainly: a provider that is genuinely down also
 now reads as "not measured". A green run here is evidence only when the skip
