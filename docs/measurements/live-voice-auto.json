@@ -1,0 +1,28 @@
+{
+  "ran_at": "2026-09-10T11:00:46+0500",
+  "mode": "auto",
+  "threshold": 0.57,
+  "outcomes": [
+    {
+      "scenario": "english_memory",
+      "woke": true,
+      "rejected": false,
+      "transcript": "show me how much memory is being used.",
+      "reply": "Memory usage is at 74.7% (approximately 11.5 GB used out of 15.4 GB total, with ",
+      "tools": [
+        "system.metrics"
+      ],
+      "spoke": 2,
+      "seconds": 7.75,
+      "passed": true,
+      "note": "",
+      "trace": [
+        "1.12 wake jarvis at 1.12s",
+        "1.12 speaking Yes, sir?",
+        "1.31 barge_in",
+        "3.14 heard show me how much memory is bei",
+        "3.14 speaking Memory usage is at 74.7% (appr"
+      ]
+    }
+  ]
+}

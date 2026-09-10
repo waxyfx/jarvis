@@ -30,6 +30,21 @@ to fail a test suite at random and two-pass got none wrong, with the Russian
 transcripts unchanged — «Открой Chrome» still comes back with Chrome spelled in
 Latin, which is the thing the prompt was there for.
 
+**A guard that was removed, recorded because it may be needed again.** Given
+too little audio, Whisper hands the priming prompt straight back — fluent,
+punctuated and indistinguishable from a transcript. That was caught here once,
+as «Покажи использование памяти» in answer to "Jarvis, open Notepad", and
+patched by comparing the output against the prompt text. Both were mistakes.
+The comparison silenced people genuinely saying the primed phrases, which are
+the phrases the assistant exists to hear; and the underlying cause was not
+Whisper at all — the session was handing over a fragment, because it started
+recording at the wake-word *detection* rather than at the start of the sentence.
+That is fixed, as is the cross-language pull that produced the Russian. Nothing
+here now guards against invention beyond ``vad_filter`` and the minimum length.
+If it returns, measure it before writing a rule: the replacement drafted for
+this — a limit on words per second — turned out to be tuned against a
+half-remembered number and would not have caught the case it was written for.
+
 The provider reports the language it settled on *and* how confident it was.
 Low confidence is a reason for the assistant to ask rather than guess, and that
 decision belongs upstream, not here.
@@ -49,7 +64,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -126,20 +140,6 @@ _VOCABULARY: dict[Language, str] = {
 #: Used only when detection could not settle on a language. Both, because
 #: guessing one and being wrong is worse than a weaker prompt.
 _VOCABULARY_EITHER = f"{_VOCABULARY[Language.EN]} {_VOCABULARY[Language.RU]}"
-
-
-def _bare(text: str) -> str:
-    """Lower-cased words only, for comparing what was said with what was primed."""
-    return " ".join(re.findall(r"\w+", text.lower()))
-
-
-#: Whisper reads ``initial_prompt`` as context and will, given almost no audio,
-#: simply hand it back — fluently, punctuated, and indistinguishable from a real
-#: transcript. It surfaced here as «Покажи использование памяти.» in answer to
-#: someone saying "Jarvis, open Notepad": the prompt, verbatim, with total
-#: confidence. Anything that is merely a piece of the priming text is therefore
-#: treated as nothing having been said.
-_PRIMED = tuple(_bare(text) for text in _VOCABULARY.values())
 
 
 @dataclass(frozen=True)
@@ -276,21 +276,7 @@ class WhisperSTT:
             language=settled,
         )
         text = " ".join(segment.text for segment in segments).strip()
-        if self._is_echo(text):
-            return "", _LANGUAGES.get(info.language, hint or Language.EN), 0.0
 
         language = _LANGUAGES.get(info.language, hint or Language.EN)
         confidence = detected_probability or float(info.language_probability)
         return text, language, confidence
-
-    @staticmethod
-    def _is_echo(text: str) -> bool:
-        """Did it hand the priming text back instead of transcribing?
-
-        Only whole-phrase matches count. A command that genuinely contains a
-        primed word — "open Chrome" — must survive, so the test is whether
-        everything that was said sits inside the prompt, not whether anything
-        does.
-        """
-        spoken = _bare(text)
-        return bool(spoken) and any(spoken in primed for primed in _PRIMED)

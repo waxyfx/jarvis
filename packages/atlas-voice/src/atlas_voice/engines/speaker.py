@@ -37,12 +37,30 @@ from atlas_voice.providers import VerificationResult, VoiceEngineError
 
 __all__ = ["DEFAULT_THRESHOLD", "SherpaSpeaker"]
 
-#: Cosine similarity above which a voice is treated as the owner's. Set low on
-#: purpose: a missed match asks the person to repeat themselves, while a false
-#: match only decides *whose* speech is listened to — the Policy Engine still
-#: stands behind every action. Calibrate against real recordings before
-#: tightening it.
-DEFAULT_THRESHOLD = 0.55
+#: Cosine similarity above which a voice is treated as the owner's.
+#:
+#: Measured, not chosen. Against the owner's second profile — twelve phrases
+#: covering normal, quiet and distant speech — his own voice scored 0.74
+#: normally, 0.67 in Russian, 0.66 from across the room and 0.65 quietly, while
+#: ten synthetic strangers reached at most 0.497. This sits at 0.57: 0.08 below
+#: his worst measurement and 0.073 above the nearest stranger.
+#:
+#: The margins are deliberately uneven. Four measurements do not describe a
+#: voice — a morning voice, a cold, a headset instead of the onboard microphone
+#: all sit somewhere below 0.65 and none of them have been measured — whereas
+#: the strangers are synthetic and their relationship to a real impostor is
+#: unknown in the other direction. More room is given to the side that is more
+#: poorly sampled.
+#:
+#: The first profile put this at 0.55 and that was wrong for a reason worth
+#: remembering: it was recorded in one sitting at one volume, and its owner
+#: speaking quietly scored 0.54. The number was never the problem.
+#:
+#: A missed match asks the person to repeat themselves. A false match decides
+#: only *whose* speech is listened to, and the Policy Engine still stands behind
+#: every action. Configurable through ``ATLAS_AGENT_VOICE_SPEAKER_THRESHOLD``;
+#: see docs/measurements/speaker-calibration.json for the data behind it.
+DEFAULT_THRESHOLD = 0.57
 
 #: Below this there is not enough voice to characterise. Verifying a quarter of
 #: a second of audio produces a confident number about nothing.

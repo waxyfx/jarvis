@@ -9,12 +9,14 @@ refused rather than silently compared.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
 
-from atlas_voice.engines.speaker import SherpaSpeaker
+from atlas_voice.engines.speaker import DEFAULT_THRESHOLD, SherpaSpeaker
 from atlas_voice.enrollment import EnrollmentSession
 from atlas_voice.profile import VoiceProfile, VoiceProfileStore, now, plaintext_protector
 from atlas_voice.providers import SpeakerProvider, VoiceEngineError
@@ -157,3 +159,45 @@ class TestReplayIsNotDefendedAgainst:
         # A "replay" is byte-identical audio played again: nothing distinguishes
         # it, because nothing here is looking.
         assert engine.verify(recording.copy()).accepted
+
+
+class TestTheThresholdAgainstItsEvidence:
+    """The threshold is a claim about measurements, so it is checked against them.
+
+    docs/measurements/speaker-calibration.json holds what was actually observed:
+    the owner's scores across normal, Russian, quiet and distant speech, and ten
+    synthetic strangers. A constant that drifts away from the data it was
+    derived from is worse than one that was guessed, because it looks
+    justified.
+    """
+
+    @pytest.fixture
+    def calibration(self) -> dict[str, Any]:
+        path = (
+            Path(__file__).resolve().parents[3]
+            / "docs"
+            / "measurements"
+            / "speaker-calibration.json"
+        )
+        if not path.is_file():
+            pytest.skip("no calibration record")
+        loaded: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        return loaded
+
+    def test_it_still_accepts_the_owner_at_his_worst(self, calibration: dict[str, Any]) -> None:
+        assert DEFAULT_THRESHOLD < calibration["owner"]["minimum"]
+
+    def test_it_still_rejects_the_nearest_stranger(self, calibration: dict[str, Any]) -> None:
+        assert DEFAULT_THRESHOLD > calibration["strangers"]["maximum"]
+
+    def test_the_owner_keeps_the_larger_margin(self, calibration: dict[str, Any]) -> None:
+        """Deliberately uneven: four measurements do not describe a voice, and
+        the conditions that would score lowest — a morning voice, a cold, a
+        different microphone — have not been measured at all."""
+        below = calibration["owner"]["minimum"] - DEFAULT_THRESHOLD
+        above = DEFAULT_THRESHOLD - calibration["strangers"]["maximum"]
+
+        assert below > above
+
+    def test_the_record_and_the_constant_agree(self, calibration: dict[str, Any]) -> None:
+        assert calibration["chosen"]["threshold"] == DEFAULT_THRESHOLD

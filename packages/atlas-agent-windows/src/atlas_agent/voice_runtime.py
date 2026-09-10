@@ -266,7 +266,7 @@ async def build_runtime(
             "voice models are missing; run scripts/fetch_voice_models.ps1 — " + ", ".join(absent)
         )
 
-    speaker = SherpaSpeaker(models.speaker, store=store)
+    speaker = SherpaSpeaker(models.speaker, store=store, threshold=settings.voice_speaker_threshold)
     has_profile = store.exists()
     # One device, shared: the runtime's stop() has to reach the same stream
     # the session is playing through, or a shutdown mid-sentence keeps talking.

@@ -9,6 +9,7 @@ of barge-in.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 from typing import Any
 
@@ -181,3 +182,57 @@ class TestPlaying:
 
 def test_silence_is_the_length_asked_for() -> None:
     assert len(silence(0.25, 16000)) == 4000
+
+
+@pytest.mark.asyncio
+class TestOnlyOneAtATime:
+    """Two utterances on one device, which used to end the process.
+
+    PortAudio was left holding a stream nobody had a reference to, because the
+    second call overwrote the first's. It crashed with a segmentation fault
+    rather than an exception, so nothing caught it and nothing logged it — the
+    process simply stopped. Reached in ordinary use by muting while the
+    assistant was speaking.
+    """
+
+    async def test_a_later_utterance_takes_the_device(self, fake: FakeSoundDevice) -> None:
+        speaker = Loudspeaker()
+        first = asyncio.create_task(speaker.play(utterance(30.0)))
+        await asyncio.sleep(0.05)
+
+        second = asyncio.create_task(speaker.play(utterance(30.0)))
+        await asyncio.sleep(0.1)
+
+        assert fake.streams[0].aborted, "the first should have been taken over, not queued"
+        assert len(fake.streams) == 2
+
+        for task in (first, second):
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+    async def test_the_earlier_one_does_not_close_the_later_one(
+        self, fake: FakeSoundDevice
+    ) -> None:
+        """The crash in miniature: whoever finishes last must not clear a
+        reference belonging to somebody else."""
+        speaker = Loudspeaker()
+        first = asyncio.create_task(speaker.play(utterance(30.0)))
+        await asyncio.sleep(0.05)
+        second = asyncio.create_task(speaker.play(utterance(30.0)))
+        await asyncio.sleep(0.1)
+
+        assert speaker._stream is fake.streams[1]
+
+        for task in (first, second):
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+    async def test_nothing_is_left_open_afterwards(self, fake: FakeSoundDevice) -> None:
+        speaker = Loudspeaker()
+        await speaker.play(utterance(0.2))
+        await speaker.play(utterance(0.2))
+
+        assert all(stream.closed for stream in fake.streams)
+        assert speaker._stream is None

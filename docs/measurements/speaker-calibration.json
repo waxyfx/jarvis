@@ -1,0 +1,57 @@
+{
+  "measured_at": "2026-09-10",
+  "why": "The threshold that decides whose speech is acted on, derived from measurement rather than chosen. Kept so a later calibration on more recordings has a baseline to beat rather than starting over.",
+  "profile": {
+    "phrases": 12,
+    "cohesion": 0.7684,
+    "quality": "strong",
+    "covers": [
+      "distant",
+      "normal",
+      "quiet"
+    ],
+    "model": "eres2net_base_sv.onnx",
+    "dimensions": 512,
+    "created_at": "2026-09-10T05:38:15+00:00"
+  },
+  "owner": {
+    "note": "Measured through the enrollment window's own Test my voice, one utterance each.",
+    "normal_english": 0.74,
+    "russian": 0.67,
+    "quiet": 0.65,
+    "distant": 0.66,
+    "minimum": 0.65,
+    "samples": 4
+  },
+  "strangers": {
+    "note": "Synthetic. Nine LibriTTS speakers on two English lines each, best score per speaker, plus the Russian Piper voice. A weak proxy for a real impostor and not an impostor rate.",
+    "scores": {
+      "11": 0.122,
+      "42": 0.165,
+      "200": 0.279,
+      "333": 0.182,
+      "470": 0.108,
+      "640": 0.497,
+      "830": 0.135,
+      "150": 0.156,
+      "90": 0.163,
+      "ru_piper": 0.375
+    },
+    "maximum": 0.497
+  },
+  "previous_profile": {
+    "note": "Recorded in one sitting at one volume. Cohesion 0.8433 — nominally the top band — and it scored 0.54 against its owner speaking quietly, under a threshold of 0.55.",
+    "cohesion": 0.8433,
+    "owner_minimum": 0.54,
+    "stranger_maximum": 0.443,
+    "gap": 0.097
+  },
+  "chosen": {
+    "threshold": 0.57,
+    "margin_below_owner_minimum": 0.08,
+    "margin_above_stranger_maximum": 0.073,
+    "gap": 0.153,
+    "reasoning": "Uneven on purpose. Four measurements do not describe a voice — a morning voice, a cold, a headset instead of the onboard microphone all sit somewhere below 0.65 and none have been measured — so the owner's side gets the larger margin. A missed match asks the person to repeat themselves; a false match decides only whose speech is listened to, and every action still goes through the Policy Engine."
+  },
+  "to_calibrate_later": "Collect real utterances across conditions and set the threshold from the owner's measured low percentile rather than from four points. Real impostor recordings would replace the synthetic strangers entirely."
+}

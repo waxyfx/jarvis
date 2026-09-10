@@ -446,3 +446,43 @@ class TestExecutingState:
 
         assert turns[0] is VoiceState.EXECUTING
         assert turns[-1] is VoiceState.THINKING
+
+
+class TestNotTalkingOverItself:
+    """Mute means both halves: stop listening, and stop talking.
+
+    The second half is the shape of a crash rather than a nicety. Muting used
+    to leave the playback task running, so the next utterance opened a second
+    output stream on a device that still had one — and the process segfaulted.
+    The device-level guarantee is tested in test_playback.py; this is about the
+    switch doing what it says.
+    """
+
+    async def test_muting_stops_the_assistant_mid_word(self) -> None:
+        """A microphone that stops listening while the voice carries on is not
+        muted; it is deaf and still talking."""
+        stopped = asyncio.Event()
+
+        async def until_cancelled(utterance: Utterance) -> None:
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                stopped.set()
+                raise
+
+        session, *_ = build(wake_at=1, player=until_cancelled, tts_seconds=10.0)
+        await feed(session, 2)
+        assert session.states.state is VoiceState.SPEAKING
+
+        session.mute()
+        await asyncio.sleep(0)
+
+        assert stopped.is_set()
+        assert session.states.is_muted
+
+    async def test_muting_when_nothing_is_playing_is_harmless(self) -> None:
+        session, *_ = build(wake_at=99)
+
+        session.mute()
+
+        assert session.states.is_muted

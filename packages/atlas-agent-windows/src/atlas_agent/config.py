@@ -75,6 +75,21 @@ class AgentSettings(BaseSettings):
     enable_tray: bool = True
     enable_hotkey: bool = True
 
+    #: How close a voice must be to the enrolled profile to be acted on.
+    #:
+    #: Exposed as configuration rather than left in the code because it is the
+    #: one voice setting that should be re-derived from data: as real recordings
+    #: accumulate, the owner's true low end becomes known and this can be
+    #: calibrated against it rather than against four measurements. Raising it
+    #: makes the assistant deafer to its owner; lowering it widens who it will
+    #: listen to, and never widens what may be done.
+    #: Kept as a literal rather than imported from the engine: this module is
+    #: loaded by every command, including `atlas-agent status`, and importing
+    #: the speaker engine would drag numpy in to answer a question about
+    #: pairing. A test asserts the two agree, which is what actually prevents
+    #: them drifting.
+    voice_speaker_threshold: float = Field(default=0.57, gt=0.0, lt=1.0)
+
     #: Refuse to store the private key unprotected. Only meaningful off Windows,
     #: where DPAPI is unavailable; leaving this False is the safe default.
     allow_plaintext_key: bool = False

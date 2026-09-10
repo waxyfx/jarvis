@@ -111,6 +111,12 @@ class Loudspeaker:
         self._device = device
         self._block_ms = block_ms
         self._stream: Any = None
+        #: Only one utterance may hold the device. Two overlapping calls used to
+        #: segfault the process — PortAudio was left with a stream nobody had a
+        #: reference to any more, because the second call overwrote the first's.
+        #: Reachable in ordinary use: the acknowledgement is still playing when
+        #: a fast turn's reply arrives.
+        self._turn = asyncio.Lock()
         #: Counted rather than ignored: a device that cannot keep up produces
         #: gaps in speech, and silence is the hardest fault to notice.
         self.underruns = 0
@@ -119,10 +125,22 @@ class Loudspeaker:
         """Play to the end, or until cancelled.
 
         Cancellation is the normal path, not an error: it is what barge-in does.
+
+        A later utterance takes the device from an earlier one rather than
+        queueing behind it. That is the right way round for speech — the newer
+        thing is the one worth hearing — and it is also the only safe way: two
+        streams open at once on this object crashed the process.
         """
         if len(utterance.samples) == 0:
             return
 
+        # Take the device before waiting for the lock, so the utterance being
+        # superseded stops now rather than when it happens to notice.
+        self._abort()
+        async with self._turn:
+            await self._play_one(utterance)
+
+    async def _play_one(self, utterance: Utterance) -> None:
         sounddevice = _sounddevice()
         cursor = _Cursor(np.asarray(utterance.samples, dtype=np.float32))
         drained = threading.Event()
@@ -136,7 +154,7 @@ class Loudspeaker:
                 raise sounddevice.CallbackStop
 
         try:
-            self._stream = sounddevice.OutputStream(
+            stream = sounddevice.OutputStream(
                 samplerate=utterance.sample_rate,
                 blocksize=max(1, int(utterance.sample_rate * self._block_ms / 1000)),
                 device=self._device,
@@ -148,7 +166,8 @@ class Loudspeaker:
         except Exception as exc:
             raise VoiceEngineError(f"could not open the speakers: {type(exc).__name__}") from exc
 
-        self._stream.start()
+        self._stream = stream
+        stream.start()
         try:
             while not drained.is_set():
                 # Polled rather than awaited on the event, because the event is
@@ -159,7 +178,7 @@ class Loudspeaker:
             self._abort()
             raise
         finally:
-            self._close()
+            self._close(stream)
 
     def stop(self) -> None:
         """Cut playback from outside the task that started it."""
@@ -176,10 +195,16 @@ class Loudspeaker:
         finally:
             stream.close(ignore_errors=True)
 
-    def _close(self) -> None:
-        stream, self._stream = self._stream, None
-        if stream is not None:
-            stream.close(ignore_errors=True)
+    def _close(self, stream: Any) -> None:
+        """Release one stream, and only clear the attribute if it is still ours.
+
+        Whoever holds the device may have changed while this utterance was
+        playing. Clearing unconditionally would drop the reference to somebody
+        else's live stream, which is the shape of the crash this replaced.
+        """
+        if self._stream is stream:
+            self._stream = None
+        stream.close(ignore_errors=True)
 
 
 def silence(seconds: float, sample_rate: int) -> np.ndarray:

@@ -163,6 +163,19 @@ class VoiceSession:
         self.states.to(VoiceState.LISTENING)
 
     def mute(self, *, actor: Actor = Actor.LOCAL) -> None:
+        """Stop listening — and stop talking.
+
+        Both halves, because muting the microphone while the assistant carries
+        on speaking is not muting. It is being talked at by something that has
+        stopped listening, which is the opposite of what the switch promises.
+
+        Synchronous, and it must be called from the event loop's thread:
+        cancelling a task is not thread-safe, so a tray or hotkey handler on
+        another thread has to route it through ``loop.call_soon_threadsafe``.
+        """
+        playback, self._playback = self._playback, None
+        if playback is not None and not playback.done():
+            playback.cancel()
         self.states.mute(actor=actor)
         self._close_conversation("muted")
         self._emit("muted", str(actor))
@@ -333,6 +346,13 @@ class VoiceSession:
             self._reset_listening()
             return
 
+        # Whatever is still playing is now out of date. Left running it would
+        # be a second voice over the first, and — until the loudspeaker learned
+        # to hand the device over — two streams open at once, which crashed the
+        # process. Reachable in ordinary use: the acknowledgement is still
+        # playing when a fast turn's reply arrives.
+        await self._stop_playback()
+
         if self.states.state is not VoiceState.SPEAKING:
             self.states.to(VoiceState.SPEAKING)
         self._speech_during_playback = 0
@@ -343,12 +363,16 @@ class VoiceSession:
         # session stuck in Speaking with nothing playing.
         await asyncio.sleep(0)
 
-    async def _finish_speaking(self, *, interrupted: bool) -> None:
+    async def _stop_playback(self) -> None:
+        """Cancel whatever is being said, and wait for it to actually stop."""
         task, self._playback = self._playback, None
         if task is not None and not task.done():
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+
+    async def _finish_speaking(self, *, interrupted: bool) -> None:
+        await self._stop_playback()
         if interrupted:
             self._emit("barge_in", "")
         self._last_activity = self._elapsed
