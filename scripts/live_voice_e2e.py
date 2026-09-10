@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import httpx
 import numpy as np
 
 REPO = Path(__file__).resolve().parents[1]
@@ -326,6 +327,42 @@ async def run_scenario(
     return outcome
 
 
+async def preflight(settings: Any) -> bool:
+    """Everything that has to be true before a person is asked to speak.
+
+    Checked together and reported together. The alternative is discovering the
+    backend is down after the models have loaded and someone is already talking
+    into a microphone, and then discovering the next thing after fixing that
+    one.
+    """
+    problems: list[str] = []
+
+    identity = IdentityStore(settings.identity_path).load()
+    if identity is None or not identity.is_enrolled:
+        problems.append("this machine is not paired — run: atlas-agent pair --code XXXX-XXXX")
+
+    for item in MODELS.missing():
+        problems.append(f"missing model: {item}")
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{settings.backend_url}/v1/health")
+        if response.status_code != 200:
+            problems.append(f"the backend answered {response.status_code}")
+    except Exception:
+        problems.append(
+            f"the backend is not answering at {settings.backend_url} — "
+            "start it with: uv run atlas-backend  (and PostgreSQL before it)"
+        )
+
+    if problems:
+        print("Not ready:")
+        for problem in problems:
+            print(f"  - {problem}")
+        return False
+    return True
+
+
 async def check_stranger(settings: Any, identity: Any, store: VoiceProfileStore) -> int:
     """Someone who is not the owner, against the owner's real profile.
 
@@ -401,15 +438,11 @@ async def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
     settings = get_agent_settings()
-    identity = IdentityStore(settings.identity_path).load()
-    if identity is None or not identity.is_enrolled:
-        print("This machine is not paired. Run: atlas-agent pair --code XXXX-XXXX")
+    if not await preflight(settings):
         return 1
 
-    absent = MODELS.missing()
-    if absent:
-        print("Voice models are missing; run scripts/fetch_voice_models.ps1")
-        return 1
+    identity = IdentityStore(settings.identity_path).load()
+    assert identity is not None
 
     store = VoiceProfileStore(
         Path(settings.identity_path).parent / "voice_profile.bin", protector=_dpapi_protector()
