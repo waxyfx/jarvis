@@ -60,6 +60,11 @@ from atlas_voice.state import VoiceState  # noqa: E402
 from voicefixtures import PIPER_MULTI, say  # noqa: E402
 
 MODELS = VoiceModels(root=REPO / ".models")
+
+#: Voices that are not the owner. Chosen because they wake the detector, so a
+#: refusal is a decision about whose voice it is rather than a detector that
+#: heard nothing.
+STRANGER_VOICES = (200, 333, 640, 11)
 RESULTS = REPO / "docs" / "measurements"
 
 
@@ -281,6 +286,18 @@ async def run_scenario(
     outcome.reply = spoken[0].detail
     outcome.spoke = sum(1 for event in watcher.new() if event.kind == "speaking")
     answer = voice.last or {}
+
+    # A spent allowance is not a voice failure and must not be reported as one.
+    # The free tier gives twenty model requests a day; the assistant answers
+    # "the model is unavailable" aloud, which through this harness would
+    # otherwise read as the wrong words coming back.
+    if answer.get("stopped_because") == "provider_unavailable":
+        outcome.note = (
+            "the model's daily allowance is spent — everything up to the model "
+            "worked, and this scenario was not measured"
+        )
+        outcome.trace = [f"{e.at:.2f} {e.kind}" for e in watcher.new()]
+        return outcome
     outcome.tools = [
         str(call.get("tool")) for call in answer.get("executed", []) if isinstance(call, dict)
     ]
@@ -309,9 +326,76 @@ async def run_scenario(
     return outcome
 
 
+async def check_stranger(settings: Any, identity: Any, store: VoiceProfileStore) -> int:
+    """Someone who is not the owner, against the owner's real profile.
+
+    The one part of the acceptance that can be done without the owner present,
+    and it costs no model requests because nothing reaches the model — that is
+    the whole point. Verification is on and the threshold is whatever is
+    configured, so this exercises the deployed setting rather than a test one.
+
+    A synthetic voice is a weak stand-in for a real impostor and this is not an
+    impostor rate. What it establishes is that the gate is reached, that it
+    closes, and that closing leaves a trace instead of silence.
+    """
+    if store.load() is None:
+        print("No voice profile to test against. Run enroll-voice.bat first.")
+        return 1
+
+    watcher = Watcher()
+    runtime = await build_runtime(
+        settings=settings,
+        identity=identity,
+        store=store,
+        models=MODELS,
+        responder=_refuse_to_answer,
+        config=SessionConfig(verify_speaker=True, idle_timeout_s=30.0),
+        on_event=watcher,
+    )
+    runtime.session.start()
+
+    turned_away = 0
+    for speaker in STRANGER_VOICES:
+        watcher.mark()
+        clip = say(PIPER_MULTI, "Jarvis, open Notepad.", speaker_id=speaker)
+        audio = np.concatenate(
+            [
+                np.zeros(int(0.4 * SAMPLE_RATE), dtype=np.float32),
+                clip,
+                np.zeros(int(1.2 * SAMPLE_RATE), dtype=np.float32),
+            ]
+        )
+        for frame in frames_from_array(audio):
+            await runtime.session.push(frame)
+
+        kinds = [event.kind for event in watcher.new()]
+        rejected = "rejected" in kinds
+        reached_model = "heard" in kinds
+        turned_away += rejected and not reached_model
+        mark = "turned away" if rejected and not reached_model else "LET THROUGH"
+        print(f"  voice {speaker:4}: {mark}  ({', '.join(kinds) or 'nothing happened'})")
+        runtime.session.mute()
+        runtime.session.unmute()
+
+    runtime.stop()
+    print(f"\n{turned_away} of {len(STRANGER_VOICES)} strangers were turned away")
+    print(f"threshold {settings.voice_speaker_threshold}")
+    return 0 if turned_away == len(STRANGER_VOICES) else 1
+
+
+async def _refuse_to_answer(transcript: Any) -> str:
+    """Nothing should ever call this. If it does, the gate let someone past."""
+    raise AssertionError(f"a stranger reached the model: {transcript.text!r}")
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--auto", action="store_true", help="synthetic speech, no person needed")
+    parser.add_argument(
+        "--stranger",
+        action="store_true",
+        help="check that a voice which is not the owner is turned away, and stop",
+    )
     parser.add_argument("--only", nargs="*", help="run only these scenarios by name")
     arguments = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
@@ -340,6 +424,9 @@ async def main() -> int:
             f"(cohesion {profile.cohesion:.2f}; heard {', '.join(profile.covers) or 'one manner'})"
         )
     print(f"threshold: {settings.voice_speaker_threshold}")
+
+    if arguments.stranger:
+        return await check_stranger(settings, identity, store)
 
     chosen = [s for s in SCENARIOS if not arguments.only or s.name in arguments.only]
     runnable = [s for s in chosen if not arguments.auto or s.synthetic is not None]
