@@ -209,6 +209,12 @@ class EnrollmentWindow:
         # be told how.
         lead = f"{prompt.hint}\n\n" if prompt.hint else ""
         self._phrase.set(f"{lead}{tag}:\n\n{prompt.text}")
+
+    def _update_progress(self) -> None:
+        """How many takes are in, which is not the same as how many will be
+        kept: a take that disagrees with the rest is dropped when the profile
+        is built, so this counts what was recorded rather than what survived."""
+        assert self._session is not None
         done = self._session.collected
         total = self._session.phrase_count
         self._progress_text.set(f"Recorded {done} of {total}")
