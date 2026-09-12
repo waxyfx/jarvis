@@ -1,189 +1,241 @@
 # Tracker integration — change plan
 
-What exists, what would change, and what should not. **No code has been written
-and nothing in `C:\Users\serik\sunny` has been modified.** This is the analysis
-that was required before any of that, and it is here to be argued with.
+What exists, what changes, and what deliberately does not. The analysis was done
+first, as required; `C:\Users\serik\sunny` has not been modified and its working
+tree is clean.
 
 ---
 
 ## 1. The tracker already exists, and it already expects JARVIS
 
-The tracker is **Sunny — Life OS**: Next.js 15 (App Router), TypeScript, Prisma,
-at `C:\Users\serik\sunny` and deployed on Vercel. Forty models covering tasks,
-goals, projects, habits, health, books, courses, vocabulary, workouts, notes and
-notifications.
+**Sunny — Life OS**: Next.js 15 (App Router), TypeScript, Prisma, forty models
+covering tasks, goals, projects, habits, health, books, courses, vocabulary,
+workouts and notes. Source at `C:\Users\serik\sunny`, deployed on Vercel
+(project `sunny`).
 
-Two things found in it change the shape of this work substantially.
+Two findings shape everything below.
 
-**Sunny has a machine-access path built for JARVIS by name.** `src/server/auth.ts`
-already contains `userFromMachineToken()`:
+**Sunny has a machine-access path written for JARVIS by name.**
+`src/server/auth.ts` contains `userFromMachineToken()`:
 
-- enabled only when `JARVIS_API_TOKEN` is set, and only if it is at least 24
-  characters — absent, nothing changes;
-- constant-time comparison, so the token cannot be guessed from response times;
-- bound to a specific account through `JARVIS_USER_EMAIL` rather than falling
-  back to whichever user the database returns first;
-- the token value is never logged.
+- enabled only when `JARVIS_API_TOKEN` is set and at least 24 characters —
+  absent, nothing changes;
+- constant-time comparison, so the token cannot be recovered from response times;
+- bound to one account through `JARVIS_USER_EMAIL` rather than falling back to
+  whichever user the database returns first;
+- never logged.
 
-That is the seam. There is no reason to design another one, and good reason not
-to: a second authentication path is a second thing to get wrong.
+That is the seam. Building a second one would mean a second authentication path
+to get wrong.
 
-**Sunny has a typed action whitelist and a proposal-then-apply flow.**
-`src/server/ai/tools.ts` defines `ACTION_SCHEMAS` — twelve actions, each with a
-zod schema:
+**Sunny separates proposing from applying.** `/api/ai/apply` re-reads actions
+from the database by message id rather than trusting the request body, and
+`markApplied` flips a flag atomically so a repeated request cannot create two
+sets of tasks. Its own comment says why. That is the same instinct as JARVIS's
+Policy Engine, arrived at independently, and it is the principle this
+integration follows.
+
+---
+
+## 2. Decisions
+
+### 2.1 The backend calls Sunny, not the agent
+
+| | Backend | Windows Agent |
+|---|---|---|
+| Where the token lives | Backend secrets, beside the Gemini key | On the laptop |
+| Works with the laptop off | **Yes** | No |
+| Matches the standing rule | Yes | No |
+
+The standing rule decides it: a credential for a remote service with write
+access to the owner's data does not go on a laptop. Beyond that, the tracker is
+not a Windows capability — every existing agent tool acts on *this machine*, and
+routing HTTP through a WebSocket to a laptop adds a hop, a failure mode and a
+device that must be awake. And the requirement is explicit: JARVIS must reach
+the tracker when the Windows machine is off.
+
+### 2.2 `SUNNY_BASE_URL` is configuration
+
+Sunny is on Vercel, so production points at the deployment. The URL is a setting
+rather than a constant so that a local instance can be used in development
+without the production backend ever being able to reach `localhost`.
 
 ```
-create_task   create_goal    create_project  create_note
-create_habit  create_vocab_words             complete_task
-reschedule_task  delete_task  update_goal_progress
-log_water     log_habit
+ATLAS_SUNNY_BASE_URL   https://<the Vercel deployment>
+ATLAS_SUNNY_TOKEN      the machine token (secret)
+ATLAS_SUNNY_TIMEOUT_S  bounded, like every other outbound call
 ```
 
-The flow matters more than the list. Sunny's own assistant *proposes* actions;
-they are stored against the message, and `/api/ai/apply` re-reads them from the
-database by message id rather than taking them from the request body. The
-comment says why: otherwise that endpoint would execute anything sent to it.
-`markApplied` flips a flag atomically before executing, so a double-click cannot
-create two sets of tasks.
+Absent `ATLAS_SUNNY_TOKEN`, the tracker is simply not available and the tools do
+not appear in the catalogue. Off by default, like Sunny's own side.
 
-That is the same instinct as JARVIS's Policy Engine, arrived at independently.
+### 2.3 The token
 
----
+One already exists in Sunny's local `.env` and satisfies the length rule. What
+remains is operational rather than code:
 
-## 2. The one decision that matters: which side calls Sunny
+- it must be present in the **Vercel** environment, or the deployment will not
+  accept it;
+- it must be present in the **JARVIS backend** environment;
+- it goes nowhere else. Not the Windows Agent, not the iPhone, not git, not
+  logs, not this document, not a test fixture.
 
-| | Backend calls Sunny | Windows Agent calls Sunny |
-|---|---|---|
-| Where the token lives | Backend, beside the Gemini key | On the laptop |
-| Works when the laptop is off | Yes | No |
-| Matches the existing rule | Yes | No |
-| Tracker reachable from | One place | Every paired device |
-
-**Recommendation: the backend.** Three reasons, in order of weight.
-
-**The standing rule already decides it.** "Gemini API key должен находиться
-только на backend/VPS и никогда не передаваться Windows Agent." A Sunny token is
-the same kind of thing: a credential for a remote service that grants write
-access to the owner's data. Nothing about it belongs on a laptop that also runs
-a wake word.
-
-**The tracker is not a Windows capability.** Every existing agent tool does
-something to *this machine* — launch a program, read a file, report memory. The
-agent's whole justification is that it is the only thing that can touch the
-local machine. Sunny is an HTTP service; routing a call to it through a
-WebSocket to a laptop and back adds a hop, a failure mode and a device that has
-to be awake, and buys nothing.
-
-**It keeps the tracker working when the laptop is not.** Tracker questions —
-"what is due today" — are exactly the ones worth answering from a phone later.
+Issuing or rotating one is a `secrets.token_urlsafe(32)` and two environment
+updates; `docs/runbook.md` gets the procedure, without the value. If the token
+must be rotated, Sunny rejects the old one the moment its environment changes —
+there is no revocation list to maintain, which is a point in favour of the
+design Sunny already chose.
 
 ---
 
-## 3. What would change in JARVIS
+## 3. The first set of actions
 
-### 3.1 A tracker provider, behind a protocol
+Ten, as agreed. Mapped onto Sunny's **existing** contract rather than duplicating
+it — where Sunny already does the thing, JARVIS calls what is there.
 
-New: `packages/atlas-backend/src/atlas_backend/tracker/` with a `TrackerProvider`
-protocol and a `SunnyTracker` implementation. Same shape as `AIProvider`: the
-orchestrator talks to the protocol, and the fact that the tracker is Sunny stays
-in one file.
+| JARVIS tool | Risk | Sunny endpoint | Note |
+|---|---|---|---|
+| `tracker.today` | LOW | `GET /api/tasks?scope=today` | `scope` already exists |
+| `tracker.upcoming` | LOW | `GET /api/tasks?scope=upcoming` | |
+| `tracker.schedule` | LOW | `GET /api/tasks?scope=today` | Those with a time, ordered |
+| `tracker.goals` | LOW | `GET /api/goals` | |
+| `tracker.habits` | LOW | `GET /api/habits` | Returns today's state and streaks |
+| `tracker.add_task` | LOW | `POST /api/tasks` | Additive |
+| `tracker.add_goal` | LOW | `POST /api/goals` | Additive |
+| `tracker.complete_task` | **MEDIUM** | `POST /api/tasks/{id}/toggle` | Changes what the owner tracks by |
+| `tracker.reschedule_task` | **MEDIUM** | `PATCH /api/tasks/{id}` | `taskUpdateSchema` accepts it |
+| `tracker.set_priority` | **MEDIUM** | `PATCH /api/tasks/{id}` | Same schema |
 
-This is not ceremony. It is what makes the tracker testable without a running
-Next.js app, and it is the thing that stops "the tracker" and "Sunny" becoming
-the same word in forty places.
+**Nothing new is needed in Sunny for any of these.** `taskUpdateSchema` is
+`taskCreateSchema.partial()`, so priority and deadline are already writable, and
+`taskQuerySchema` already understands `today | week | overdue | upcoming |
+unscheduled`. The earlier draft of this plan assumed new actions would be
+required; reading the validators showed otherwise.
 
-### 3.2 Tools in the catalogue, with risk levels
+**Deletion is absent.** Sunny has `delete_task`; JARVIS will not expose it. This
+project has measured recognition turning «Открой» into «Закрой» — a misheard
+delete is not recoverable by apologising. Same reasoning as `fs.delete`, which is
+still `not_implemented`.
 
-Tracker actions enter `atlas_shared.tools.catalog` like any other tool, because
-the Policy Engine is not something to route around:
+### 3.1 Naming a task out loud
 
-| Tool | Risk | Why |
-|---|---|---|
-| `tracker.today` | LOW | Read-only |
-| `tracker.search` | LOW | Read-only |
-| `tracker.create_task` | LOW | Additive, and trivially undone |
-| `tracker.complete_task` | **MEDIUM** | Changes state the owner tracks by |
-| `tracker.reschedule_task` | **MEDIUM** | Same |
-| `tracker.log_water` / `log_habit` | LOW | Additive |
-| `tracker.update_goal_progress` | **MEDIUM** | Overwrites a number |
-| `tracker.delete_task` | **not implemented** | See §5 |
+`complete_task`, `reschedule_task` and `set_priority` need a task id, and a
+person says a title. Sunny solves this internally with `pickByTitle`; JARVIS
+resolves the same way — read the candidates, match, and **name the match in the
+confirmation**.
 
-The risk column is the substance of this plan. A misheard word becoming a
-completed task is a small harm; a misheard word becoming a deleted one is not,
-and the existing rule about `fs.delete` applies here for the same reason.
-
-### 3.3 Nothing new in the agent
-
-No agent changes. Tracker tools are dispatched by the backend, not sent down the
-WebSocket, and the agent's tool catalogue does not grow.
-
----
-
-## 4. What would change in Sunny
-
-**Ideally nothing.** The endpoints JARVIS needs already exist — `/api/tasks`,
-`/api/dashboard`, `/api/goals`, `/api/habits`, `/api/health/*`, `/api/notes` —
-and the machine token already reaches them.
-
-Two things might be wanted, and both are additive:
-
-1. **A read endpoint shaped for a spoken answer.** "What is due today" currently
-   means several calls and joining them client-side. `/api/dashboard` may
-   already be close enough; this needs checking against the real response before
-   anything is proposed.
-2. **Rate limiting on the machine-token path.** A shared secret with no limit is
-   a shared secret that can be brute-forced offline in a way the constant-time
-   comparison does not prevent.
-
-Neither is required for a first version, and neither should be written before
-the read endpoint is tried as it stands.
+This is exactly where a misheard word does damage, which is why all three are
+MEDIUM: the Policy Engine holds them and the owner hears *which* task before
+anything happens. "Mark the gym session complete?" is a different question from
+"Mark something complete?".
 
 ---
 
-## 5. What this plan deliberately does not do
+## 4. propose → validate → apply
 
-**`tracker.delete_task` is not implemented.** Sunny has `delete_task` and JARVIS
-will not expose it, for the same reason `fs.delete` is still `not_implemented`.
-Speech recognition mishears — measured, in this project, turning «Открой» into
-«Закрой». A misheard delete is not recoverable by apologising.
+Sunny's principle, implemented on JARVIS's side of the wire.
 
-**JARVIS does not reuse Sunny's `/api/ai/apply`.** That endpoint exists to apply
-what *Sunny's* model proposed, keyed by a message in Sunny's own conversation.
-JARVIS has its own model, its own conversation and its own confirmation step;
-borrowing Sunny's would mean two systems each believing they own the gate.
-JARVIS calls the ordinary REST endpoints and applies its own Policy Engine.
+1. **Propose.** Gemini emits a `tracker.*` tool call with structured arguments.
+   It never produces a URL, a method, a header or a body.
+2. **Validate.** The tool manifest's schema checks the arguments, exactly as for
+   every other tool, and the Policy Engine assigns the risk above.
+3. **Apply.** `SunnyTracker` maps the validated call to one specific request.
+   The mapping lives in code. There is no path from model output to an arbitrary
+   HTTP call, because no such function exists to reach.
 
-**No write path is enabled before the read path is used in anger.** Asking the
-tracker what is due today is most of the value and none of the risk.
-
-**Sunny's own assistant is left alone.** It has a Gemini key and an Anthropic key
-of its own, and its conversations are its own. Two assistants sharing one
-conversation store is a design nobody asked for.
-
----
-
-## 6. Open questions for the owner
-
-1. **Where is Sunny reachable from the backend?** The Vercel deployment, or the
-   local instance? A VPS backend cannot reach `localhost:3000` on the laptop.
-2. **Is `JARVIS_API_TOKEN` already set anywhere,** or does it need issuing? It
-   must be generated fresh, stored only on the backend, and never committed —
-   the existing rules about the Gemini key apply unchanged.
-3. **Which of the twelve actions are actually wanted by voice?** The list above
-   is what Sunny supports, not what is worth saying out loud. "Add a task" and
-   "what is due today" may be the whole of it.
+**JARVIS does not reuse `/api/ai/apply`, and that is a deliberate departure
+worth stating.** That endpoint applies what *Sunny's* model proposed, keyed by a
+message in Sunny's own conversation store; JARVIS has its own model, its own
+conversation and its own confirmation step. Borrowing it would mean two systems
+each believing they own the gate, and would require JARVIS to write rows into
+Sunny's AI tables to say anything at all. The principle is kept; the endpoint is
+not the principle.
 
 ---
 
-## 7. Suggested order
+## 5. Reading a tracker out loud
 
-1. Read-only first: `tracker.today` and `tracker.search`, against the real
-   deployment, with the token on the backend.
-2. Measure what a spoken tracker answer actually sounds like. A list of eleven
-   tasks read aloud is unusable, and that changes the shape of the read API more
-   than any amount of planning will.
-3. `tracker.create_task` — additive, LOW, the most obviously useful write.
-4. The MEDIUM writes, once confirmation by voice has been settled, which it has
-   not been: saying "yes" to a microphone is still not the confirmation step.
+The requirement: *"Сегодня у вас 11 задач, сэр. Три высокого приоритета.
+Ближайшая — тренировка в 15:00. Хотите услышать остальные?"*
 
-Nothing here is started. This document is the deliverable.
+**The compaction is done in code, not by asking the model nicely.** A prompt
+saying "be brief" is a preference; a summariser that returns four facts is a
+guarantee. Given eleven tasks, the tracker provider returns:
+
+```
+count: 11
+by_priority: {urgent: 0, high: 3, medium: 6, low: 2}
+next: {title: "Тренировка", at: "15:00"}
+overdue: 2
+```
+
+The model is given *that*, not the eleven tasks. It cannot read out a list it was
+never shown, which is the only reliable way to stop it.
+
+**A correction, from reading the orchestrator rather than assuming.** An earlier
+draft of this plan said the full list could travel in the tool result for the
+interface to display. It cannot. `_describe_outcome` feeds the *entire* result
+back to the model as `OK: <tool> returned <result>`, so anything in there is
+something the model has read and may recite. There is one field and it has one
+audience.
+
+So the digest *is* the result, and "хотите услышать остальные?" is answered the
+way a conversation answers it — by asking again. `tracker.today(offset=3)`
+returns the next few. The model never holds eleven titles at any point in the
+turn, which is a stronger guarantee than trimming what it says after the fact,
+and it costs nothing that a voice interface was going to use anyway.
+
+The full list already has a home: Sunny's own web interface, which is where a
+person looks when they want to read rather than listen. Building a second one
+here is not in this stage.
+
+Thresholds worth arguing about, and therefore configuration: how many items are
+named individually before switching to a summary (three seems right), and how
+many a single follow-up returns.
+
+---
+
+## 6. What changes where
+
+**In JARVIS** — all of it additive:
+
+- `packages/atlas-backend/src/atlas_backend/tracker/` — a `TrackerProvider`
+  protocol and a `SunnyTracker` implementation, so the orchestrator talks to a
+  protocol and "Sunny" stays in one file.
+- Ten entries in `atlas_shared.tools.catalog` with the risk levels above.
+- A voice summariser, with its own tests, because it is where the requirement in
+  §5 actually lives.
+- Settings and a runbook entry.
+
+**In Sunny** — ideally nothing, and nothing at all in the first stage. Every
+endpoint needed already exists and the machine token already reaches them. Two
+things may be wanted later, both additive and neither required:
+
+1. A read endpoint shaped for a spoken answer, *if* the summariser turns out to
+   need several round trips. It should not be added before that is measured.
+2. Rate limiting on the machine-token path. A shared secret with no limit can be
+   attacked offline in a way constant-time comparison does not prevent.
+
+**Not touched:** Sunny's own assistant, its conversations, its Gemini and
+Anthropic keys. Two assistants sharing one conversation store is a design nobody
+asked for.
+
+---
+
+## 7. Order of work
+
+1. Read-only, against the Vercel deployment: `tracker.today` first.
+2. Measure what a spoken answer actually sounds like, and fix the summariser
+   against that rather than against a guess.
+3. The three additive writes: `add_task`, `add_goal`.
+4. The MEDIUM writes, with the confirmation naming the task.
+
+---
+
+## 8. Still needed from the owner
+
+1. **The Vercel URL.** The project is `sunny`; the deployment hostname has not
+   been read from anywhere and should not be guessed.
+2. **`JARVIS_API_TOKEN` in the Vercel environment.** It exists locally. Whether
+   the deployment has it is not visible from here, and the integration cannot
+   work until it does.
