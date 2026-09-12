@@ -136,27 +136,29 @@ reported it as the cost of speaking Russian.
 
 ---
 
-## 5. Speaker verification — enrolled, and not yet calibrated
+## 5. Speaker verification — enrolled, measured, and set at 0.57
 
-The owner's voice was registered through the Windows enrollment window: twelve
-phrases, all accepted, cohesion 0.8433, 512 dimensions, DPAPI-encrypted, with
-the source recordings deleted automatically.
+The owner's voice was registered through the Windows enrollment window. It took
+two attempts, and the first one is the more instructive.
 
-Then it was tested, and the number came back wrong in an instructive way.
+**The first profile agreed with itself and not with its owner.** Twelve phrases,
+all accepted, cohesion 0.8433 — nominally the top band. Then it was tested:
 
-| Condition | Score against the profile |
-|---|---|
-| Normal, English | 0.70 |
-| Russian | 0.75 |
-| **Quiet** | **0.54** |
-| From across the room | 0.66 |
-| Nearest synthetic stranger (of 7) | 0.443 |
+| Condition | First profile | Second profile |
+|---|---|---|
+| Normal, English | 0.70 | **0.74** |
+| Russian | 0.75 | 0.67 |
+| **Quiet** | **0.54** | **0.65** |
+| From across the room | 0.66 | 0.66 |
+| **Owner's worst** | **0.54** | **0.65** |
+| Nearest synthetic stranger | 0.443 | 0.497 |
+| **Gap** | **0.097** | **0.153** |
 
-The threshold is 0.55. **The owner speaking quietly scores below it.** The
-profile agreed with itself beautifully and did not recognise the person it was
-built from.
+The threshold was 0.55. The owner speaking quietly scored 0.54 — the profile did
+not recognise the person it was built from, and nothing in its own quality score
+gave any warning.
 
-The cause is not the threshold. Twelve phrases recorded in one sitting, at one
+The cause was not the threshold. Twelve phrases recorded in one sitting, at one
 distance, at one volume describe *one way of speaking*, and cohesion — which
 measures how tightly the takes agree — rewards exactly that narrowness. A high
 score there means a consistent sitting, not a good profile.
@@ -164,28 +166,52 @@ score there means a consistent sitting, not a good profile.
 So the enrollment script now asks for variation: two takes quiet, two at a
 distance, spread through the session and never first, with the instruction shown
 above the phrase because people start reading the moment they see words. The
-profile records which manners it actually heard, taken from the takes that
-survived rather than from the script. Quality is judged on coverage as well as
-cohesion: a profile that heard one manner cannot be rated strong however tightly
-it agrees with itself, and the existing profile consequently reads *usable,
-heard one way of speaking only*, which is the truth about it.
+profile records which manners it heard, taken from the takes that survived
+rather than from the script, and quality is judged on coverage as well as
+cohesion — a profile that heard one manner cannot be rated strong however
+tightly it agrees with itself.
 
-**Open, and waiting on the owner:** re-enrollment under the new script, then a
-fresh measurement, then a threshold. The gap between the owner's worst score
-(0.54) and the nearest stranger's best (0.443) is 0.097, which is not much room;
-broadening the profile should widen it. Setting a threshold before that
-measurement would be guessing.
+The second profile reads *strong, cohesion 0.77, heard distant, normal, quiet*.
+Cohesion fell and that is the improvement: the profile got wider, not worse. The
+owner's floor rose by 0.11 and his spread narrowed from 0.21 to 0.09.
+
+### The threshold
+
+**0.57**, and it is configuration rather than a constant —
+`ATLAS_AGENT_VOICE_SPEAKER_THRESHOLD`. It sits 0.08 below the owner's worst
+measurement and 0.073 above the nearest stranger.
+
+The margins are uneven on purpose. Four measurements do not describe a voice: a
+morning voice, a cold, a headset instead of the onboard microphone all sit
+somewhere below 0.65 and none of them have been measured. The strangers are
+synthetic and their relationship to a real impostor is unknown in the other
+direction. More room goes to the side that is more poorly sampled.
+
+The evidence is in
+[measurements/speaker-calibration.json](measurements/speaker-calibration.json),
+and a test fails if the constant drifts away from it — a number that looks
+justified while no longer matching its data is worse than one that was guessed.
+
+### Whether it actually turns strangers away
+
+Four synthetic voices, chosen because they *do* wake the detector so a refusal
+is a decision about whose voice it is rather than a detector that heard nothing,
+said "Jarvis, open Notepad" to the real profile at the deployed threshold. All
+four were refused at the gate, and nothing reached the model — the responder
+wired in for that check raises if it is ever called.
+
+A synthetic voice is a weak stand-in for a real impostor and this is not an
+impostor rate. What it establishes is that the gate is reached, that it closes,
+and that closing leaves a trace rather than silence: silence there is
+indistinguishable from a detector that never fired, and only one of those is
+fixed by speaking louder.
 
 Two limits stated rather than discovered later:
 
-- **The strangers are synthetic.** Seven Piper voices are a weak proxy for real
-  impostors, and no recordings of other people were available. The stranger
-  figures are indicative, not an impostor rate.
+- **No real impostor has been measured.** No recordings of other people exist.
 - **Verification is not authentication.** It filters whose speech is acted on.
   Every MEDIUM and HIGH action still goes through the Policy Engine exactly as
-  before.
-
----
+  before, and the voice path cannot confirm anything.
 
 ## 6. Speech recognition
 
@@ -319,19 +345,29 @@ start, but from inside the voice engine a turn that launches a program and a
 turn that merely answers are the same thing: a wait. The tool runner knows the
 difference and now reports it.
 
-**6. Enrollment could not record at all.** The root project depended on
+**6. Two utterances on one loudspeaker ended the process.** Not an exception — a
+segmentation fault. PortAudio was left holding a stream nobody had a reference
+to any more, because the second `play()` overwrote the first's; nothing caught
+it and nothing logged it, the process simply stopped mid-run. The live
+acceptance reached it on its second scenario. Three things were wrong at three
+levels: `Loudspeaker` promised "one at a time" and did nothing to ensure it, the
+session started a new reply without cancelling the one still playing, and **mute
+stopped listening while leaving the voice running** — which is not muting, it is
+being talked at by something that has stopped listening.
+
+**7. Enrollment could not record at all.** The root project depended on
 `atlas-voice[vad,wake,stt,tts]` and the `audio` extra was simply missing — the
 one package that talks to the microphone was the one package absent. Every test
 passed throughout, because every test either fakes the device or skips. Only a
 person pressing the button could find it.
 
-**7. The level gate sat below the room's noise floor.** `MINIMUM_RMS` was 0.01
+**8. The level gate sat below the room's noise floor.** `MINIMUM_RMS` was 0.01
 by guesswork; this machine's microphone reads 0.0105 with nobody speaking, so a
 recording of an empty room would have been accepted as a phrase and averaged
 into the profile. Now 0.025 rms with a 0.10 peak floor, measured rather than
 chosen.
 
-**8. Piper is not deterministic.** Four consecutive calls with the same text,
+**9. Piper is not deterministic.** Four consecutive calls with the same text,
 voice and speaker produced clips of 27 121, 28 421, 26 564 and 27 121 samples,
 no two identical — VITS samples its own phoneme durations and nothing seeds
 that. The wake word fired on one rendition and not the next; Whisper read one as
@@ -376,38 +412,40 @@ architecture degraded correctly rather than pretending.
 
 | Suite | Result |
 |---|---|
-| `packages/atlas-voice` | 229 passing, including 18 new for the microphone path |
-| `packages/atlas-agent-windows` | 183 passing, including 18 new for the voice runtime |
+| `packages/atlas-voice` | 238 passing |
+| `packages/atlas-agent-windows` | 189 passing |
 | `packages/atlas-backend` | 270 passing |
 | `packages/atlas-shared` | 211 passing |
 | `e2e/test_voice_e2e.py` | 13 passing, stable across repeated runs |
-| `e2e/test_gemini_live.py` | 38 skipped — daily allowance spent |
-| ruff / format / mypy | clean, 96 source files, 182 formatted |
+| `e2e/test_live_runner.py` | 10 passing |
+| `e2e/test_gemini_live.py` | skipped when the daily allowance is spent |
+| ruff / format / mypy | clean, 96 source files |
 
-Two areas gained coverage that had none. `capture.py` — the microphone path,
-where a mistake produces silence rather than an error, and where every
-downstream test passes regardless because each supplies its own audio. And
-`build_runtime`, which loads five models and wires them together and is the
-whole of what the launcher does before the microphone opens; a mistyped model
-path would previously have been found by whoever double-clicked it.
+Areas that had no coverage at all when M4 began and now do:
 
-Four of the thirteen end-to-end scenarios are new: speaker verification driven
-through the real models rather than a stand-in embedder. A profile is built from
-one synthetic voice and a different one tries to use it — enrolled voice 0.85
-against the profile, the others 0.13 to 0.34, so the 0.55 threshold is not being
-asked to split hairs. They establish that the rejection path is reached and that
-a refusal is *recorded* rather than silent: silence there is indistinguishable
-from a detector that never fired, and only one of those is fixed by speaking
-louder.
-
----
+- **`capture.py`** — the microphone path, where a mistake produces silence
+  rather than an error and every downstream test passes regardless, because
+  each supplies its own audio.
+- **`playback.py`** — including the guarantee that prevented the segfault above.
+- **`build_runtime`** — five models wired together, and the whole of what the
+  launcher does before the microphone opens. A mistyped model path would
+  previously have been found by whoever double-clicked it.
+- **Speaker verification end to end**, through the real models rather than a
+  stand-in embedder.
+- **The acceptance runner's own bookkeeping**, which decides whether spoken
+  results survive between sittings.
 
 ## 11. What M4 does not have
 
 Stated so it is not mistaken for an oversight:
 
-- **A calibrated verification threshold.** Blocked on re-enrollment, §5.
-- **A real impostor measurement.** No recordings of other people exist.
+- **The owner's own spoken acceptance.** Seven ordinary commands, listed in
+  §12. Every component behind them is covered by automated tests and the whole
+  path has been driven end to end with real Gemini; what is outstanding is the
+  final confirmation from the person who will use it, which is a different
+  thing from an untested component and is tracked separately.
+- **A real impostor measurement.** No recordings of other people exist. The
+  four refusals in §5 used synthetic voices.
 - **Acoustic echo cancellation.** Barge-in works because the microphone hears
   the room; on loudspeakers at volume the assistant can hear itself. Untested
   with the speakers loud.
@@ -421,3 +459,42 @@ Stated so it is not mistaken for an oversight:
   should be tuned against it.
 - **Personality Engine.** Roadmap only, deliberately after M4's critical path,
   and it will never touch Policy Engine, permissions, risk level or SAFE MODE.
+
+---
+
+## 12. Checkpoint
+
+**Built, measured and covered by automated tests.** Everything in §1 to §10.
+The wake word against 592 clips, latency and cost on this machine, recognition
+under noise, speaker verification through the real models, the crash the live
+run found and the eight other defects before it. The gate is clean: ruff,
+format, mypy and every suite.
+
+**Outstanding, and deliberately not blocking.** The owner's own spoken run. It
+is the final user acceptance rather than a gap in coverage, so development
+continues; the two are tracked separately and a synthetic result never counts
+towards a spoken one — they are written to different files for that reason.
+
+Done one command at a time, whenever there is half a minute:
+
+```
+live-e2e.bat --remaining
+```
+
+| Scenario | What to say | State |
+|---|---|---|
+| `english_open_notepad` | Jarvis, open Notepad | awaiting |
+| `russian_open_notepad` | Jarvis, открой блокнот | awaiting |
+| `russian_memory` | Jarvis, покажи использование памяти | awaiting |
+| `quiet` | the same command, quietly | awaiting |
+| `distant` | the same command, from where you sit | awaiting |
+| `continuous` | a follow-up without saying Jarvis | awaiting |
+| `barge_in` | interrupt the reply mid-sentence | awaiting |
+
+Results accumulate in
+[measurements/live-voice.json](measurements/live-voice.json), each carrying the
+date it was established. A scenario already passed is not asked for again.
+
+**Not started, and gated behind this.** M5. Tracker integration is next in the
+roadmap and the tracker already exists — see `docs/TRACKER-CHANGE-PLAN.md` for
+the analysis that has to come before any code is written.

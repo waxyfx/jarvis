@@ -34,6 +34,7 @@ cosmetic gain, so only the user-facing name changed.
 | [M3-REPORT.md](docs/M3-REPORT.md) | What M3 delivered, including the adversarial matrix |
 | [M4-PLAN.md](docs/M4-PLAN.md) | The voice engine as planned, and the choices behind it |
 | [M4-REPORT.md](docs/M4-REPORT.md) | What M4 delivered, what it measured, and what is still wrong |
+| [TRACKER-CHANGE-PLAN.md](docs/TRACKER-CHANGE-PLAN.md) | The tracker that already exists, and what integrating it would change |
 | [PERSONALITY-ENGINE.md](docs/PERSONALITY-ENGINE.md) | Adaptive communication style — roadmap, never policy |
 
 ## Layout
