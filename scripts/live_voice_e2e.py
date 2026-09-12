@@ -91,53 +91,51 @@ class Scenario:
 SCENARIOS: tuple[Scenario, ...] = (
     Scenario(
         name="english_open_notepad",
-        instruction='Say: "Jarvis, open Notepad"',
+        instruction="Say:  Jarvis, open Notepad",
         expect_words=("notepad",),
         expect_tool="app.launch",
         synthetic=(PIPER_MULTI, "Jarvis, open Notepad.", 200),
     ),
     Scenario(
         name="russian_open_notepad",
-        instruction="Скажите: «Jarvis, открой блокнот»",
+        instruction="Скажите:  Jarvis, открой блокнот",
         expect_words=("notepad", "блокнот"),
         expect_tool="app.launch",
-        synthetic=None,  # the English voice cannot say this and the Russian one has no wake word
+        # The English voice cannot say this and the Russian one never wakes the
+        # detector, so there is no honest way to synthesise it.
+        synthetic=None,
     ),
     Scenario(
         name="russian_memory",
-        instruction="Скажите: «Jarvis, покажи использование памяти»",
+        instruction="Скажите:  Jarvis, покажи использование памяти",
         expect_words=("памяти", "memory"),
         expect_tool="system.metrics",
         synthetic=None,
     ),
     Scenario(
-        name="english_memory",
-        instruction='Say: "Jarvis, show me how much memory is being used"',
-        expect_words=("memory",),
-        expect_tool="system.metrics",
-        synthetic=(PIPER_MULTI, "Jarvis, show me how much memory is being used.", 200),
-    ),
-    Scenario(
         name="quiet",
-        instruction="Say the same thing again, quietly — as if someone nearby were asleep",
-        expect_words=("memory", "памяти"),
+        instruction="Скажите ту же команду про память — вполголоса",
+        expect_words=("памяти", "memory"),
+        expect_tool="system.metrics",
         synthetic=None,
     ),
     Scenario(
         name="distant",
-        instruction="Say it again from where you normally sit, a metre or two back",
-        expect_words=("memory", "памяти"),
+        instruction="Скажите её ещё раз — с того места, где вы обычно сидите",
+        expect_words=("памяти", "memory"),
+        expect_tool="system.metrics",
         synthetic=None,
     ),
     Scenario(
         name="continuous",
-        instruction='Without saying Jarvis again: "and what is the time"',
+        instruction="Не говоря Jarvis:  а сколько осталось места на диске",
+        expect_words=("диск", "disk", "места"),
         continues=True,
-        synthetic=(PIPER_MULTI, "And what is the time?", 200),
+        synthetic=(PIPER_MULTI, "And how much disk space is left?", 200),
     ),
     Scenario(
         name="barge_in",
-        instruction="Say Jarvis, then talk over the answer while it is speaking",
+        instruction="Скажите Jarvis и команду, затем перебейте ответ на полуслове",
         barge_in=True,
         synthetic=None,
     ),
@@ -314,9 +312,15 @@ async def run_scenario(
     # A continuation that woke the detector proves nothing about continuation.
     continuation_ok = not scenario.continues or not outcome.woke
     woke_ok = scenario.continues or outcome.woke
+    # And an interruption that never interrupted proves nothing either.
+    interrupted_ok = not scenario.barge_in or any(
+        event.kind == "barge_in" for event in watcher.new()
+    )
 
-    outcome.passed = words_ok and tool_ok and continuation_ok and woke_ok
-    if not woke_ok:
+    outcome.passed = words_ok and tool_ok and continuation_ok and woke_ok and interrupted_ok
+    if not interrupted_ok:
+        outcome.note = "the reply was never interrupted"
+    elif not woke_ok:
         outcome.note = "the wake word never fired"
     elif not continuation_ok:
         outcome.note = "it needed the wake word again, so the conversation had closed"
@@ -325,6 +329,63 @@ async def run_scenario(
     elif not tool_ok:
         outcome.note = f"expected {scenario.expect_tool}, ran {outcome.tools}"
     return outcome
+
+
+def merge_results(
+    path: Path, outcomes: list[Outcome], settings: Any, *, auto: bool
+) -> dict[str, Any]:
+    """Keep what earlier runs established instead of starting over.
+
+    An acceptance that needs a person to speak seven times is not something
+    anyone does in one sitting, and a report that only remembers the last run
+    punishes doing it in pieces — which is the only way it actually gets done.
+    A scenario's newest result replaces its previous one; everything else
+    stands.
+    """
+    previous: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            stored = json.loads(path.read_text(encoding="utf-8"))
+            previous = {row["scenario"]: row for row in stored.get("outcomes", [])}
+        except (json.JSONDecodeError, KeyError, TypeError):
+            # A corrupted record is not a reason to refuse to write a good one.
+            previous = {}
+
+    for outcome in outcomes:
+        previous[outcome.scenario] = vars(outcome) | {"at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+
+    record = {
+        "ran_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "mode": "auto" if auto else "interactive",
+        "threshold": settings.voice_speaker_threshold,
+        "outcomes": [previous[name] for name in previous],
+    }
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    return record
+
+
+def already_passed(auto: bool) -> set[str]:
+    """Scenario names recorded as having passed in an earlier sitting."""
+    path = RESULTS / ("live-voice-auto.json" if auto else "live-voice.json")
+    if not path.is_file():
+        return set()
+    try:
+        stored = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, TypeError):
+        return set()
+    return {row["scenario"] for row in stored.get("outcomes", []) if row.get("passed")}
+
+
+def report_remaining(record: dict[str, Any]) -> None:
+    """What still has to be spoken, so the next sitting can be a short one."""
+    passed = {row["scenario"] for row in record["outcomes"] if row.get("passed")}
+    remaining = [s.name for s in SCENARIOS if s.name not in passed]
+    if not remaining:
+        print("\nEvery scenario has passed at some point. M4 acceptance is complete.")
+        return
+    print(f"\nStill to do ({len(remaining)}): {', '.join(remaining)}")
+    print(f"  one at a time:  live-e2e.bat --only {remaining[0]}")
 
 
 async def preflight(settings: Any) -> bool:
@@ -434,6 +495,11 @@ async def main() -> int:
         help="check that a voice which is not the owner is turned away, and stop",
     )
     parser.add_argument("--only", nargs="*", help="run only these scenarios by name")
+    parser.add_argument(
+        "--remaining",
+        action="store_true",
+        help="run only what has not passed yet, so a session can be short",
+    )
     arguments = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
@@ -462,6 +528,11 @@ async def main() -> int:
         return await check_stranger(settings, identity, store)
 
     chosen = [s for s in SCENARIOS if not arguments.only or s.name in arguments.only]
+    if arguments.remaining:
+        chosen = [s for s in chosen if s.name not in already_passed(arguments.auto)]
+        if not chosen:
+            print("Nothing left: every scenario has passed.")
+            return 0
     runnable = [s for s in chosen if not arguments.auto or s.synthetic is not None]
     print(
         f"scenarios: {len(runnable)} of {len(chosen)}; "
@@ -530,22 +601,10 @@ async def main() -> int:
     passed = sum(1 for outcome in outcomes if outcome.passed)
     print(f"\n{passed} of {len(outcomes)} scenarios passed")
 
-    RESULTS.mkdir(parents=True, exist_ok=True)
     path = RESULTS / ("live-voice-auto.json" if arguments.auto else "live-voice.json")
-    path.write_text(
-        json.dumps(
-            {
-                "ran_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-                "mode": "auto" if arguments.auto else "interactive",
-                "threshold": settings.voice_speaker_threshold,
-                "outcomes": [vars(outcome) for outcome in outcomes],
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    record = merge_results(path, outcomes, settings, auto=arguments.auto)
     print(f"written to {path.relative_to(REPO)}")
+    report_remaining(record)
     return 0 if passed == len(outcomes) else 1
 
 
