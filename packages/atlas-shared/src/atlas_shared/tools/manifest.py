@@ -20,15 +20,20 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
 from atlas_shared.enums import RiskLevel
 
+#: Which side of the wire a tool runs on. A string rather than an enum because
+#: it crosses into JSON descriptors and reads plainly there.
+ExecutionSide = Literal["agent", "backend"]
+
 __all__ = [
     "Condition",
     "ConditionOp",
+    "ExecutionSide",
     "ManifestEvaluationError",
     "RiskAssessment",
     "RiskContext",
@@ -284,6 +289,21 @@ class ToolManifest:
     requires_capabilities: tuple[str, ...] = ()
     side_effects: tuple[str, ...] = ()
     rate_limit_per_minute: int | None = None
+    #: Where the work happens.
+    #:
+    #: Everything that touches the owner's machine runs on the agent, which is
+    #: the agent's entire justification. Some tools touch a service instead —
+    #: the tracker is on the internet, not on the laptop — and sending those
+    #: through a WebSocket to a computer that may be switched off would add a
+    #: hop, a failure mode and a dependency on the machine being awake, for
+    #: nothing.
+    #:
+    #: The distinction is security-relevant, not only operational. A backend
+    #: tool never becomes a signed command, so there is nothing to replay
+    #: against the agent, and the credential it uses never leaves the backend.
+    #: Policy applies identically either way: risk is assessed, confirmation is
+    #: required, and the audit trail records it, before anything is run.
+    runs_on: ExecutionSide = "agent"
 
     def assess(self, args: Mapping[str, Any], context: RiskContext | None = None) -> RiskAssessment:
         """Compute the effective risk of invoking this tool with ``args``.
