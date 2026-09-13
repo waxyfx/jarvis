@@ -150,11 +150,11 @@ _HABITS_NAMED = 5
 
 
 async def _add_task(tracker: TrackerProvider, args: Mapping[str, Any]) -> dict[str, Any]:
-    deadline = args.get("deadline")
+    when = args.get("when")
     applied = await tracker.add_task(
         title=str(args["title"]).strip(),
         priority=_priority(args.get("priority", "medium")),
-        deadline=_parse_datetime(deadline, field="deadline") if deadline else None,
+        when=_parse_datetime(when, field="when") if when else None,
     )
     return {"added": applied.what}
 
@@ -177,7 +177,7 @@ async def _complete_task(tracker: TrackerProvider, args: Mapping[str, Any]) -> d
 async def _reschedule_task(tracker: TrackerProvider, args: Mapping[str, Any]) -> dict[str, Any]:
     applied = await tracker.reschedule_task(
         task_id=str(args["task_id"]),
-        deadline=_parse_datetime(args.get("deadline"), field="deadline"),
+        when=_parse_datetime(args.get("when"), field="when"),
     )
     return {"moved": applied.what, "to": applied.detail}
 

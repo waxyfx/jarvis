@@ -97,7 +97,8 @@ class TestReading:
                     "id": "t1",
                     "title": "  Тренировка  ",
                     "priority": "high",
-                    "deadline": "2026-09-12T15:00:00Z",
+                    "date": "2026-09-12T00:00:00Z",
+                    "startTime": "15:00",
                     "subtasks": [{"id": "s1"}],
                     "comments": [{"id": "c1"}],
                     "tags": ["gym"],
@@ -113,20 +114,42 @@ class TestReading:
         assert tasks[0].at == "15:00"
         assert tasks[0].project == "Health"
 
-    async def test_a_deadline_without_a_time_carries_no_time(self) -> None:
-        handler = replying([{"id": "t1", "title": "Read", "deadline": "2026-09-12T00:00:00Z"}])
+    async def test_a_day_without_an_hour_carries_no_time(self) -> None:
+        handler = replying([{"id": "t1", "title": "Read", "date": "2026-09-12T00:00:00Z"}])
 
         assert (await tracker(handler).tasks_today())[0].at is None
+
+    async def test_a_deadline_is_read_as_a_deadline_not_as_a_time(self) -> None:
+        """Sunny keeps the scheduled day in `date` and a separate `deadline`
+        for when something must be finished. Reading one as the other made
+        evening tasks report as late the moment their hour passed."""
+        handler = replying(
+            [
+                {
+                    "id": "t1",
+                    "title": "Report",
+                    "date": "2026-09-12T00:00:00Z",
+                    "startTime": "15:00",
+                    "deadline": "2026-09-20T00:00:00Z",
+                }
+            ]
+        )
+
+        task = (await tracker(handler).tasks_today())[0]
+
+        assert task.at == "15:00"
+        assert task.when is not None and task.when.hour == 15
+        assert task.due is not None and task.due.day == 20
 
     async def test_an_unparseable_date_costs_the_date_and_nothing_else(self) -> None:
         """An unexpected shape should cost one missing deadline, not an
         exception halfway through reading the day aloud."""
-        handler = replying([{"id": "t1", "title": "Read", "deadline": "not a date"}])
+        handler = replying([{"id": "t1", "title": "Read", "date": "not a date"}])
 
         tasks = await tracker(handler).tasks_today()
 
         assert tasks[0].title == "Read"
-        assert tasks[0].deadline is None
+        assert tasks[0].when is None
 
     async def test_an_unknown_priority_falls_back_rather_than_failing(self) -> None:
         handler = replying([{"id": "t1", "title": "Read", "priority": "extremely"}])
@@ -149,8 +172,8 @@ class TestReading:
         far = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         handler = replying(
             [
-                {"id": "a", "title": "Soon", "deadline": far},
-                {"id": "b", "title": "Next year", "deadline": "2030-01-01T10:00:00Z"},
+                {"id": "a", "title": "Soon", "date": far},
+                {"id": "b", "title": "Next year", "date": "2030-01-01T10:00:00Z"},
             ]
         )
 
@@ -191,15 +214,30 @@ class TestWriting:
         assert handler.seen[0].url.path == "/api/tasks/t1/toggle"
         assert applied.what == "Тренировка"
 
-    async def test_rescheduling_patches_the_deadline(self) -> None:
+    async def test_rescheduling_moves_the_day_and_the_hour(self) -> None:
+        """Not the deadline. "Move it to tomorrow at nine" is about where the
+        task sits, and writing a deadline instead leaves it on whatever day it
+        was already on — which is how a live write ended up on no day at all."""
         handler = replying({"id": "t1", "title": "Report"})
         when = datetime(2026, 9, 15, 9, 0, tzinfo=UTC)
 
-        await tracker(handler).reschedule_task(task_id="t1", deadline=when)
+        await tracker(handler).reschedule_task(task_id="t1", when=when)
 
         request = handler.seen[0]
         assert request.method == "PATCH"
-        assert json.loads(request.content) == {"deadline": when.isoformat()}
+        assert json.loads(request.content) == {"date": "2026-09-15", "startTime": "09:00"}
+
+    async def test_a_new_task_is_scheduled_rather_than_given_a_deadline(self) -> None:
+        handler = replying({"id": "t9", "title": "Report"})
+
+        await tracker(handler).add_task(
+            title="Report", when=datetime(2026, 9, 15, 9, 0, tzinfo=UTC)
+        )
+
+        body = json.loads(handler.seen[0].content)
+        assert body["date"] == "2026-09-15"
+        assert body["startTime"] == "09:00"
+        assert "deadline" not in body
 
     async def test_priority_uses_the_same_patch(self) -> None:
         """Sunny's taskUpdateSchema is taskCreateSchema.partial(), so no new

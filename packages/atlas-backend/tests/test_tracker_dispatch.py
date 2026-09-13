@@ -59,7 +59,7 @@ class FakeTracker:
         *,
         title: str,
         priority: Priority = Priority.MEDIUM,
-        deadline: datetime | None = None,
+        when: datetime | None = None,
     ) -> Applied:
         return Applied(what=title, detail="added")
 
@@ -70,7 +70,7 @@ class FakeTracker:
         self.completed.append(task_id)
         return Applied(what="Тренировка", detail="completed")
 
-    async def reschedule_task(self, *, task_id: str, deadline: datetime) -> Applied:
+    async def reschedule_task(self, *, task_id: str, when: datetime) -> Applied:
         return Applied(what="Отчёт", detail="moved")
 
     async def set_priority(self, *, task_id: str, priority: Priority) -> Applied:
@@ -78,7 +78,7 @@ class FakeTracker:
 
 
 def a_task(title: str, at: str | None = None) -> Task:
-    return Task(id=title.lower(), title=title, deadline=datetime.now(UTC), at=at)
+    return Task(id=title.lower(), title=title, when=datetime.now(UTC), at=at)
 
 
 @contextmanager

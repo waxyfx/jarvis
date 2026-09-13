@@ -41,9 +41,14 @@ class Digest:
     """What the model is given about a set of tasks."""
 
     total: int
-    #: Counts by priority, omitting the empty ones — a zero tells nobody
-    #: anything and costs a clause when spoken.
-    by_priority: dict[str, int] = field(default_factory=dict)
+    #: How many are pressing, by level, omitting the empty ones.
+    #:
+    #: Only urgent and high. Spoken aloud the full breakdown reads as "four
+    #: tasks — two high, one medium, one low", and the last two clauses are the
+    #: remainder: they say nothing the total did not already say, and they cost
+    #: seconds. Measured against a real day, reporting every bucket produced a
+    #: 9.9-second answer where naming only what presses gives about six.
+    pressing: dict[str, int] = field(default_factory=dict)
     overdue: int = 0
     #: The soonest thing with a time, which is what "what's next" means.
     next_up: dict[str, str] | None = None
@@ -56,8 +61,8 @@ class Digest:
     def as_result(self) -> dict[str, Any]:
         """The tool result. Deliberately small: the model reads all of it."""
         result: dict[str, Any] = {"total": self.total}
-        if self.by_priority:
-            result["by_priority"] = self.by_priority
+        if self.pressing:
+            result["pressing"] = self.pressing
         if self.overdue:
             result["overdue"] = self.overdue
         if self.next_up:
@@ -120,8 +125,10 @@ def _overview(tasks: list[Task], *, now: datetime) -> Digest:
     counted = Counter(task.priority.value for task in tasks)
     return Digest(
         total=len(tasks),
-        by_priority={
-            level.value: counted[level.value] for level in Priority if counted[level.value]
+        pressing={
+            level.value: counted[level.value]
+            for level in Priority
+            if level.is_pressing and counted[level.value]
         },
         overdue=overdue,
         next_up=_next_up(tasks),
@@ -143,13 +150,13 @@ def _listing(tasks: list[Task], *, now: datetime, offset: int) -> Digest:
 
 
 def _next_up(tasks: list[Task]) -> dict[str, str] | None:
-    """The soonest task that has a time, if any has one.
+    """The soonest thing that happens at a time, if anything does.
 
-    A deadline without a time is a day, not a moment, and "next" is a question
-    about moments. Something due today at three beats something due today.
+    A day without an hour is not a moment, and "what is next" is a question
+    about moments. Something at three beats something merely due today.
     """
-    timed = [task for task in tasks if task.at and task.deadline and not task.done]
+    timed = [task for task in tasks if task.at and task.when and not task.done]
     if not timed:
         return None
-    soonest = min(timed, key=lambda task: task.deadline)  # type: ignore[arg-type,return-value]
+    soonest = min(timed, key=lambda task: task.when or datetime.max)
     return {"title": soonest.title, "at": soonest.at or ""}

@@ -62,11 +62,9 @@ class FakeTracker:
         *,
         title: str,
         priority: Priority = Priority.MEDIUM,
-        deadline: datetime | None = None,
+        when: datetime | None = None,
     ) -> Applied:
-        self.calls.append(
-            ("add_task", {"title": title, "priority": priority, "deadline": deadline})
-        )
+        self.calls.append(("add_task", {"title": title, "priority": priority, "when": when}))
         return Applied(what=title, detail="added")
 
     async def add_goal(self, *, title: str, target_date: date | None = None) -> Applied:
@@ -77,8 +75,8 @@ class FakeTracker:
         self.calls.append(("complete_task", {"task_id": task_id}))
         return Applied(what="Тренировка", detail="completed")
 
-    async def reschedule_task(self, *, task_id: str, deadline: datetime) -> Applied:
-        self.calls.append(("reschedule_task", {"task_id": task_id, "deadline": deadline}))
+    async def reschedule_task(self, *, task_id: str, when: datetime) -> Applied:
+        self.calls.append(("reschedule_task", {"task_id": task_id, "when": when}))
         return Applied(what="Отчёт", detail="moved to 2026-09-20 09:00")
 
     async def set_priority(self, *, task_id: str, priority: Priority) -> Applied:
@@ -90,7 +88,7 @@ def task(title: str, *, at: str | None = None, hours: float = 2, done: bool = Fa
     return Task(
         id=title.lower(),
         title=title,
-        deadline=NOW.replace(microsecond=0),
+        when=NOW.replace(microsecond=0),
         at=at,
         done=done,
     )
@@ -245,28 +243,28 @@ class TestWriting:
         await run_tracker_tool(
             tracker,
             "tracker.add_task",
-            {"title": "Report", "deadline": "2026-09-20T09:00:00Z"},
+            {"title": "Report", "when": "2026-09-20T09:00:00Z"},
         )
 
-        assert tracker.calls[0][1]["deadline"] == datetime(2026, 9, 20, 9, 0, tzinfo=UTC)
+        assert tracker.calls[0][1]["when"] == datetime(2026, 9, 20, 9, 0, tzinfo=UTC)
 
     async def test_a_date_the_model_invented_is_refused_by_name(self) -> None:
         """Models write dates as prose more often than anyone expects. Failing
         here with the field named lets the assistant ask again; failing inside
         the HTTP call tells the owner the tracker is broken."""
-        with pytest.raises(TrackerError, match="deadline is not a date"):
+        with pytest.raises(TrackerError, match="when is not a date"):
             await run_tracker_tool(
-                FakeTracker(), "tracker.add_task", {"title": "x", "deadline": "next Tuesday"}
+                FakeTracker(), "tracker.add_task", {"title": "x", "when": "next Tuesday"}
             )
 
     async def test_a_naive_timestamp_is_treated_as_utc_rather_than_refused(self) -> None:
         tracker = FakeTracker()
 
         await run_tracker_tool(
-            tracker, "tracker.add_task", {"title": "x", "deadline": "2026-09-20T09:00:00"}
+            tracker, "tracker.add_task", {"title": "x", "when": "2026-09-20T09:00:00"}
         )
 
-        assert tracker.calls[0][1]["deadline"].tzinfo is not None
+        assert tracker.calls[0][1]["when"].tzinfo is not None
 
     async def test_completing_reports_which_task(self) -> None:
         """ "Done" is not an answer when the question was which one, and a
@@ -279,7 +277,7 @@ class TestWriting:
         result = await run_tracker_tool(
             FakeTracker(),
             "tracker.reschedule_task",
-            {"task_id": "t1", "deadline": "2026-09-20T09:00:00Z"},
+            {"task_id": "t1", "when": "2026-09-20T09:00:00Z"},
         )
 
         assert result["moved"] == "Отчёт"

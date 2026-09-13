@@ -1,0 +1,21 @@
+{
+  "measured_at": "2026-09-13",
+  "against": "the owner's real tracker, four tasks",
+  "why": "The digest was designed against a requirement. How long it takes to say can only be answered by rendering it, and that is what changed it.",
+  "pipeline": "tracker.today -> Gemini (gemini-flash-latest) -> Piper ru_RU-dmitri-medium",
+  "before": {
+    "digest": "total, every priority bucket, next, more",
+    "spoken": "На сегодня запланировано 4 задачи (2 с высоким приоритетом, 1 со средним, 1 с низким). Ближайшая — «Помощь маме с банками» в 19:00. Перечислить все задачи подробно?",
+    "seconds": 9.9,
+    "words": 27
+  },
+  "after": {
+    "digest": "total, only urgent and high, next, more",
+    "spoken": "На сегодня у вас запланировано 4 задачи (2 из них с высоким приоритетом). Ближайшая — «Помощь маме с банками» в 19:00. Перечислить все задачи подробно?",
+    "seconds": 8.8,
+    "words": 25
+  },
+  "what_changed": "Only urgent and high are reported. Spoken, 'one medium, one low' is the remainder — it says nothing the total did not, and costs a second.",
+  "what_is_left": "The remaining length is the task's own title and the offer to read the rest, both of which were asked for. Trimming further would remove something wanted rather than something spare.",
+  "not_measured": "Whether 8.8 seconds is tolerable every morning. That is a judgement for the person who hears it, not a number."
+}

@@ -75,36 +75,50 @@ def _as_priority(value: Any) -> Priority:
 def _task_from(row: dict[str, Any]) -> Task:
     """One Sunny task, reduced to what can be spoken.
 
-    Everything else it carries — subtasks, comments, attachments, tags, order,
-    recurrence — is dropped here rather than downstream, because anything that
-    survives this function is something the model will eventually read.
-    """
-    # `date` is the day and `startTime` is the hour, as separate fields —
-    # checked against the real deployment rather than assumed. An earlier
-    # version looked for a field called `time`, which does not exist, so every
-    # appointment arrived without its hour and the schedule was empty.
-    deadline = _as_datetime(row.get("deadline") or row.get("dueAt") or row.get("date"))
-    at = row.get("startTime") if isinstance(row.get("startTime"), str) else None
-    if at is None and deadline is not None and (deadline.hour or deadline.minute):
-        at = deadline.strftime("%H:%M")
+    Field names checked against the real deployment rather than assumed. Sunny
+    keeps the scheduled day in `date` and the hour beside it in `startTime`, and
+    `deadline` is a separate due-by that most tasks leave empty. An earlier
+    version read `deadline` as the scheduled time and looked for a field called
+    `time` that does not exist, so appointments arrived with no hour and
+    anything scheduled earlier in the evening was reported as late.
 
-    # A day with a time recorded beside it is a moment, and "what is next" is a
-    # question about moments.
-    if deadline is not None and at and not (deadline.hour or deadline.minute):
+    Everything else a task carries — subtasks, comments, attachments, tags,
+    order, recurrence — is dropped here rather than downstream, because
+    anything surviving this function is something the model eventually reads.
+    """
+    when = _as_datetime(row.get("date"))
+    at = row.get("startTime") if isinstance(row.get("startTime"), str) else None
+    if at is None and when is not None and (when.hour or when.minute):
+        at = when.strftime("%H:%M")
+
+    # `date` is midnight and the hour lives beside it; put them together so
+    # "what is next" can compare moments rather than days.
+    if when is not None and at:
         hour, _, minute = at.partition(":")
         if hour.isdigit() and minute.isdigit():
-            deadline = deadline.replace(hour=int(hour), minute=int(minute))
+            when = when.replace(hour=int(hour), minute=int(minute))
 
     project = row.get("project")
     return Task(
         id=str(row.get("id", "")),
         title=str(row.get("title", "")).strip(),
         priority=_as_priority(row.get("priority")),
-        deadline=deadline,
+        when=when,
         at=at,
-        done=bool(row.get("completedAt") or row.get("done") or row.get("status") == "done"),
+        due=_as_datetime(row.get("deadline")),
+        done=bool(row.get("completedAt") or row.get("status") == "done"),
         project=str(project.get("name")) if isinstance(project, dict) else None,
     )
+
+
+def _scheduling(moment: datetime) -> dict[str, Any]:
+    """The two fields Sunny wants for "put this here".
+
+    `date` alone leaves a task on a day with no hour, which is what the tracker
+    means by unscheduled-within-the-day; sending both is how an appointment is
+    made.
+    """
+    return {"date": moment.date().isoformat(), "startTime": moment.strftime("%H:%M")}
 
 
 class SunnyTracker:
@@ -201,9 +215,7 @@ class SunnyTracker:
         if days <= 0:
             return tasks
         horizon = datetime.now(UTC).timestamp() + days * 86400
-        return [
-            task for task in tasks if task.deadline is None or task.deadline.timestamp() <= horizon
-        ]
+        return [task for task in tasks if task.when is None or task.when.timestamp() <= horizon]
 
     async def goals(self) -> list[Goal]:
         payload = await self._request("GET", "/api/goals")
@@ -241,11 +253,11 @@ class SunnyTracker:
         *,
         title: str,
         priority: Priority = Priority.MEDIUM,
-        deadline: datetime | None = None,
+        when: datetime | None = None,
     ) -> Applied:
         body: dict[str, Any] = {"title": title, "priority": priority.value}
-        if deadline is not None:
-            body["deadline"] = deadline.isoformat()
+        if when is not None:
+            body.update(_scheduling(when))
         created = await self._request("POST", "/api/tasks", json=body)
         return Applied(what=title, detail="added", extra={"id": _id_of(created)})
 
@@ -263,13 +275,14 @@ class SunnyTracker:
         updated = await self._request("POST", f"/api/tasks/{task_id}/toggle")
         return Applied(what=_title_of(updated) or task_id, detail="completed")
 
-    async def reschedule_task(self, *, task_id: str, deadline: datetime) -> Applied:
-        updated = await self._request(
-            "PATCH", f"/api/tasks/{task_id}", json={"deadline": deadline.isoformat()}
-        )
+    async def reschedule_task(self, *, task_id: str, when: datetime) -> Applied:
+        # The scheduled day and hour, not the deadline: "move it to tomorrow at
+        # nine" is about where the task sits, and writing a deadline instead
+        # leaves it on whatever day it was already on.
+        updated = await self._request("PATCH", f"/api/tasks/{task_id}", json=_scheduling(when))
         return Applied(
             what=_title_of(updated) or task_id,
-            detail=f"moved to {deadline.strftime('%Y-%m-%d %H:%M')}",
+            detail=f"moved to {when.strftime('%Y-%m-%d %H:%M')}",
         )
 
     async def set_priority(self, *, task_id: str, priority: Priority) -> Applied:

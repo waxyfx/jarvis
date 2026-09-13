@@ -469,12 +469,13 @@ class TrackerAddTaskArgs(_Args):
         pattern="^(low|medium|high|urgent)$",
         description="One of low, medium, high, urgent. The tracker's own four levels.",
     )
-    deadline: str | None = Field(
+    when: str | None = Field(
         default=None,
         max_length=40,
         description=(
-            "ISO 8601, with a time when the owner gave one. Leave unset rather "
-            "than guessing a date they did not say."
+            "When to put it in the day, ISO 8601, with a time if the owner gave "
+            "one. This schedules the task; it is not a deadline. Leave unset "
+            "rather than guessing a day they did not say."
         ),
     )
 
@@ -553,10 +554,13 @@ CATALOG.register(
 
 class TrackerRescheduleArgs(_Args):
     task_id: str = Field(min_length=1, max_length=64, description="As for complete_task.")
-    deadline: str = Field(
+    when: str = Field(
         min_length=4,
         max_length=40,
-        description="ISO 8601. Include the time when the owner gave one.",
+        description=(
+            "The new day, ISO 8601, with a time if the owner gave one. This "
+            "moves where the task sits in the calendar."
+        ),
     )
 
 

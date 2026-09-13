@@ -30,14 +30,21 @@ def task(
     hours: float | None = None,
     at: str | None = None,
     done: bool = False,
+    due_hours: float | None = None,
 ) -> Task:
-    deadline = NOW + timedelta(hours=hours) if hours is not None else None
+    """``hours`` is when it is scheduled; ``due_hours`` is when it is due.
+
+    Two parameters because they are two things. The tracker schedules on one
+    field and measures lateness on another, and treating them as one made an
+    evening task read as late the moment its hour passed.
+    """
     return Task(
         id=title.lower().replace(" ", "-"),
         title=title,
         priority=priority,
-        deadline=deadline,
+        when=NOW + timedelta(hours=hours) if hours is not None else None,
         at=at,
+        due=NOW + timedelta(hours=due_hours) if due_hours is not None else None,
         done=done,
     )
 
@@ -68,15 +75,15 @@ class TestWhenThereAreFew:
         listing = summarise(many(11), now=NOW, offset=0)
 
         assert overview.items == []
-        assert overview.by_priority
+        assert overview.total == 11
         assert listing.items
-        assert listing.by_priority == {}
+        assert listing.pressing == {}
 
     def test_a_short_list_is_not_summarised_into_arithmetic(self) -> None:
         digest = summarise(many(NAMED_INDIVIDUALLY), now=NOW)
 
         assert len(digest.items) == NAMED_INDIVIDUALLY
-        assert digest.by_priority == {}
+        assert digest.pressing == {}
         assert digest.next_up is None
 
 
@@ -90,7 +97,10 @@ class TestWhenThereAreMany:
         assert "items" not in result or len(result["items"]) <= NAMED_INDIVIDUALLY
         assert len(str(result)) < 400
 
-    def test_it_says_how_many_and_how_urgent(self) -> None:
+    def test_it_says_how_many_and_how_many_press(self) -> None:
+        """Only urgent and high. "Four tasks, two high, one medium, one low"
+        spends its last two clauses on the remainder — measured, that turned a
+        six-second answer into a ten-second one."""
         tasks = [
             *[task(f"High {i}", priority=Priority.HIGH) for i in range(3)],
             *[task(f"Medium {i}") for i in range(6)],
@@ -100,14 +110,15 @@ class TestWhenThereAreMany:
         digest = summarise(tasks, now=NOW)
 
         assert digest.total == 11
-        assert digest.by_priority == {"low": 2, "medium": 6, "high": 3}
+        assert digest.pressing == {"high": 3}
 
-    def test_empty_priorities_are_left_out(self) -> None:
-        """ "Zero urgent" costs a clause and tells nobody anything."""
+    def test_nothing_pressing_is_said_at_all(self) -> None:
+        """ "Zero urgent" costs a clause and tells nobody anything, and a day of
+        ordinary work should sound like one."""
         digest = summarise(many(8), now=NOW)
 
-        assert "urgent" not in digest.by_priority
-        assert "high" not in digest.by_priority
+        assert digest.pressing == {}
+        assert "pressing" not in digest.as_result()
 
     def test_the_next_thing_is_the_soonest_with_a_time(self) -> None:
         tasks = [
@@ -121,7 +132,7 @@ class TestWhenThereAreMany:
 
         assert digest.next_up == {"title": "Training", "at": "15:00"}
 
-    def test_a_deadline_without_a_time_is_not_next(self) -> None:
+    def test_a_day_without_an_hour_is_not_next(self) -> None:
         """A day is not a moment, and "what's next" asks about moments."""
         digest = summarise([task("Someday", hours=1), *many(5)], now=NOW)
 
@@ -133,12 +144,20 @@ class TestWhenThereAreMany:
         assert summarise(tasks, now=NOW).next_up is None
 
     def test_being_late_is_counted_because_it_changes_the_answer(self) -> None:
-        tasks = [task("Late", hours=-3), task("Later still", hours=-1), *many(5)]
+        tasks = [task("Late", due_hours=-3), task("Later still", due_hours=-1), *many(5)]
 
         assert summarise(tasks, now=NOW).overdue == 2
 
+    def test_an_hour_that_has_passed_is_not_lateness(self) -> None:
+        """A task scheduled for seven in the evening is not late at eight; it
+        is simply not done yet. Only a deadline makes something late, and most
+        tasks in this tracker do not have one."""
+        tasks = [task("Evening", hours=-3, at="19:00"), *many(5)]
+
+        assert summarise(tasks, now=NOW).overdue == 0
+
     def test_a_finished_task_is_not_late(self) -> None:
-        tasks = [task("Done late", hours=-3, done=True), *many(5)]
+        tasks = [task("Done late", due_hours=-3, done=True), *many(5)]
 
         assert summarise(tasks, now=NOW).overdue == 0
 
