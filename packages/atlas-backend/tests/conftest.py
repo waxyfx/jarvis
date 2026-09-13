@@ -73,6 +73,14 @@ def _make_settings():  # type: ignore[no-untyped-def]
         heartbeat_interval_s=2.0,
         hello_timeout_s=2.0,
         pairing_rate_limit_per_minute=100,
+        # Silenced explicitly, not left to chance. Settings read `.env` for
+        # anything not passed, so a developer who has configured the real
+        # tracker would otherwise have every test build a client pointing at
+        # their live deployment — and a write test would reach it. A test suite
+        # must not depend on, or touch, whatever happens to be in someone's
+        # environment.
+        sunny_base_url="",
+        sunny_token=None,
     )
 
 

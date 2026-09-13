@@ -79,10 +79,21 @@ def _task_from(row: dict[str, Any]) -> Task:
     recurrence — is dropped here rather than downstream, because anything that
     survives this function is something the model will eventually read.
     """
+    # `date` is the day and `startTime` is the hour, as separate fields —
+    # checked against the real deployment rather than assumed. An earlier
+    # version looked for a field called `time`, which does not exist, so every
+    # appointment arrived without its hour and the schedule was empty.
     deadline = _as_datetime(row.get("deadline") or row.get("dueAt") or row.get("date"))
-    at = row.get("time") if isinstance(row.get("time"), str) else None
+    at = row.get("startTime") if isinstance(row.get("startTime"), str) else None
     if at is None and deadline is not None and (deadline.hour or deadline.minute):
         at = deadline.strftime("%H:%M")
+
+    # A day with a time recorded beside it is a moment, and "what is next" is a
+    # question about moments.
+    if deadline is not None and at and not (deadline.hour or deadline.minute):
+        hour, _, minute = at.partition(":")
+        if hour.isdigit() and minute.isdigit():
+            deadline = deadline.replace(hour=int(hour), minute=int(minute))
 
     project = row.get("project")
     return Task(

@@ -157,6 +157,45 @@ class TestReading:
 
         assert [item["title"] for item in result["items"]] == ["Call", "Gym"]
 
+    async def test_a_schedule_names_its_items_rather_than_counting_them(self) -> None:
+        """Asked for a schedule against four real appointments, the first
+        version answered "four tasks, two of them high priority" — true, and
+        not a schedule. A sequence answers "what does my day look like"; an
+        inventory answers "how much is there"."""
+        tracker = FakeTracker(
+            tasks=[task(f"Meeting {index}", at=f"{9 + index:02d}:00") for index in range(6)]
+        )
+
+        result = await run_tracker_tool(tracker, "tracker.schedule", {})
+
+        assert result["items"], "a schedule that names nothing is not a schedule"
+        assert result["items"][0]["title"] == "Meeting 0"
+
+    async def test_the_day_is_read_in_the_order_it_happens(self) -> None:
+        """The tracker returns whatever its board is arranged by, and read
+        aloud that came out 22:30, then 21:45, then 20:30. Backwards through
+        the evening is not something a listener can follow."""
+        tracker = FakeTracker(
+            tasks=[
+                task("Reading", at="22:30"),
+                task("Python", at="20:30"),
+                task("Family", at="19:00"),
+                task("IELTS", at="21:45"),
+            ]
+        )
+
+        result = await run_tracker_tool(tracker, "tracker.today", {"offset": 0})
+
+        assert [item["at"] for item in result["items"]] == ["19:00", "20:30", "21:45"]
+
+    async def test_untimed_work_comes_after_the_appointments(self) -> None:
+        """It is not part of the sequence, so it does not interrupt it."""
+        tracker = FakeTracker(tasks=[task("Someday"), task("Gym", at="09:00")])
+
+        result = await run_tracker_tool(tracker, "tracker.today", {"offset": 0})
+
+        assert [item["title"] for item in result["items"]] == ["Gym", "Someday"]
+
     async def test_a_finished_appointment_is_not_in_the_schedule(self) -> None:
         tracker = FakeTracker(tasks=[task("Gym", at="15:00", done=True)])
 

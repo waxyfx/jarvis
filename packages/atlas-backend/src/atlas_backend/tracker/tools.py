@@ -18,7 +18,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from atlas_backend.tracker.digest import summarise
-from atlas_backend.tracker.provider import Priority, TrackerError, TrackerProvider
+from atlas_backend.tracker.provider import Priority, Task, TrackerError, TrackerProvider
 
 __all__ = ["TRACKER_TOOLS", "run_tracker_tool"]
 
@@ -70,29 +70,49 @@ def _offset(args: Mapping[str, Any]) -> int | None:
 # ------------------------------------------------------------------ reading
 
 
+def _in_time_order(tasks: list[Task]) -> list[Task]:
+    """The order the day happens in.
+
+    The tracker returns its own order — whatever the board is arranged by — and
+    read aloud that came out as 22:30, then 21:45, then 20:30. A list of times
+    going backwards is not something a listener can follow, and on a screen the
+    same order is fine because the eye can jump. Untimed items sit after the
+    timed ones, since they are not part of the sequence.
+    """
+    return sorted(tasks, key=lambda task: (task.at is None, task.at or ""))
+
+
 async def _today(tracker: TrackerProvider, args: Mapping[str, Any]) -> dict[str, Any]:
-    tasks = await tracker.tasks_today()
+    tasks = _in_time_order(await tracker.tasks_today())
     return summarise(tasks, now=_now(), offset=_offset(args)).as_result()
 
 
 async def _upcoming(tracker: TrackerProvider, args: Mapping[str, Any]) -> dict[str, Any]:
     days = int(args.get("days", 7))
-    tasks = await tracker.tasks_upcoming(days=days)
+    tasks = _in_time_order(await tracker.tasks_upcoming(days=days))
     result = summarise(tasks, now=_now(), offset=_offset(args)).as_result()
     result["days"] = days
     return result
 
 
 async def _schedule(tracker: TrackerProvider, args: Mapping[str, Any]) -> dict[str, Any]:
-    """Only the things that happen at a time, in the order they happen.
+    """Only the things that happen at a time, named in the order they happen.
 
-    A schedule is not a list of tasks. Something due "today" with no hour is a
+    A schedule is not a list of tasks. Something due today with no hour is a
     thing to do, not an appointment, and including it would make the answer
     longer while making it less like a schedule.
+
+    Named rather than counted, which is the difference between this and
+    ``tracker.today``. Asked for a schedule against four real appointments, the
+    first version answered "four tasks, two of them high priority" — true, and
+    not a schedule. A sequence is the answer to "what does my day look like";
+    an inventory is the answer to "how much is there".
     """
     tasks = [task for task in await tracker.tasks_today() if task.at and not task.done]
-    tasks.sort(key=lambda task: task.at or "")
-    return summarise(tasks, now=_now(), offset=_offset(args)).as_result()
+    offset = _offset(args)
+    return summarise(
+        _in_time_order(tasks), now=_now(), offset=0 if offset is None else offset
+    ).as_result()
 
 
 async def _goals(tracker: TrackerProvider, _: Mapping[str, Any]) -> dict[str, Any]:

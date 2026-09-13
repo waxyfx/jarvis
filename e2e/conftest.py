@@ -75,6 +75,12 @@ def backend_settings(allowed_roots: tuple[str, ...] = ()):  # type: ignore[no-un
         owner_display_name="E2E Owner",
         heartbeat_interval_s=2.0,
         hello_timeout_s=5.0,
+        # Silenced explicitly. Settings read `.env` for anything not passed, so
+        # a developer with the real tracker configured would otherwise have
+        # every end-to-end run build a client pointing at their live
+        # deployment — and a write would reach it.
+        sunny_base_url="",
+        sunny_token=None,
     )
 
 
