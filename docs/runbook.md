@@ -184,6 +184,77 @@ The agent's identity file is **not** backed up on purpose. It is
 machine-specific, DPAPI-encrypted, and useless elsewhere. If the machine is lost,
 revoke its device and pair the replacement.
 
+## Connecting the tracker
+
+JARVIS can read and update the owner's Life OS — Sunny, deployed on Vercel. The
+integration is **off until configured**: without both settings the tracker tools
+are not offered to the model, nothing is constructed, and the backend starts
+exactly as it does now.
+
+Two settings, on the **backend only**:
+
+```
+ATLAS_SUNNY_BASE_URL=https://<the Vercel deployment>
+ATLAS_SUNNY_TOKEN=<the machine token>
+```
+
+**The token does not go anywhere else.** Not the Windows Agent, not the phone,
+not git, not a test fixture, not a support message. It is a credential for a
+remote service with write access to the owner's data, which puts it in the same
+class as the Gemini key and under the same rule. The backend is the only process
+that needs it because the backend is the only process that calls Sunny — the
+tracker is a web service, not a Windows capability, and a question about today's
+tasks should still be answerable when the laptop is off.
+
+### Issuing a token
+
+Sunny's side already exists: `src/server/auth.ts` accepts a bearer token when
+`JARVIS_API_TOKEN` is set, compares it in constant time, requires at least 24
+characters, binds it to one account through `JARVIS_USER_EMAIL`, and never logs
+it. Nothing needs writing; the token needs generating and placing.
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Put the same value in three places and nowhere else:
+
+1. Sunny's local `.env`, if you run it locally.
+2. Sunny's **Vercel** environment, or the deployment will refuse it.
+3. The JARVIS backend's `.env` as `ATLAS_SUNNY_TOKEN`.
+
+Also set `JARVIS_USER_EMAIL` in Sunny to the owner's account. Without it Sunny
+falls back to whichever user its database returns first, which is harmless with
+one account and is not a property worth relying on.
+
+### Rotating it
+
+Generate a new one and update the same three places. There is no revocation list
+to maintain: Sunny rejects the previous value the moment its environment
+changes, which is a point in favour of the design it already had. JARVIS will
+report the tracker as unavailable in the gap — the tools disappear from what the
+model is offered rather than failing mid-sentence.
+
+Rotate if the value was ever pasted into a chat, a log, an issue or a shell
+history that others can read. There is no way to tell whether a shared secret
+has been copied, so the question is not "was it used" but "could it have been".
+
+### Checking it works
+
+With both settings present, ask the assistant something the tracker answers —
+"what do I have today". The tool call is `tracker.today` and it should complete.
+A tracker failure is reported in the reply rather than raised, so a broken
+integration sounds like "the tracker could not answer" rather than taking the
+turn down.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| The model never uses a tracker tool | Not configured | Both settings must be present; either one alone leaves the tracker off |
+| "the tracker refused the token" | Sunny got a token it does not recognise | The Vercel environment and the backend disagree. Rotate to the same value in both |
+| "the tracker did not answer in time" | Sunny cold-starting, or unreachable | Vercel's first request after idle is slow; if it persists, check the deployment |
+| "the tracker answered with something that is not JSON" | A Vercel error page | Usually a deployment that is failing to build |
+| Tracker tools offered but every call is refused | A MEDIUM action awaiting confirmation | Completing, moving and re-prioritising are held by the Policy Engine by design |
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |

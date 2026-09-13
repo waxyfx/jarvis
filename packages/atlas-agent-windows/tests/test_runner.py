@@ -309,3 +309,34 @@ class TestActivityReporting:
         result = await runner.run(command("system.metrics"))
 
         assert result.status is ToolStatus.OK
+
+
+class TestWhoseJobItIs:
+    """Some tools are not this machine's to run, and saying so is the point.
+
+    The tracker is a web service reached by the backend, not a Windows
+    capability. One of its commands arriving here would mean something upstream
+    is wrong — a stale catalogue, a misrouted dispatch — and the answer should
+    name that rather than read as a missing feature. Nothing in the normal path
+    sends one; this is the check that holds if something changes.
+    """
+
+    async def test_a_backend_tool_is_refused_as_not_this_machines(self, runner: ToolRunner) -> None:
+        result = await runner.run(command("tracker.today"))
+
+        assert result.status is ToolStatus.REFUSED
+        assert result.failure is not None
+        assert result.failure.code == "wrong_side"
+
+    async def test_the_refusal_says_where_it_does_belong(self, runner: ToolRunner) -> None:
+        """ "Not implemented" would send whoever reads it looking for an executor
+        that was never meant to exist."""
+        result = await runner.run(command("tracker.complete_task", {"task_id": "t1"}))
+
+        assert result.failure is not None
+        assert "backend" in result.failure.message
+
+    async def test_an_agent_tool_is_unaffected(self, runner: ToolRunner) -> None:
+        result = await runner.run(command("system.metrics"))
+
+        assert result.status is ToolStatus.OK

@@ -42,7 +42,7 @@ cosmetic gain, so only the user-facing name changed.
 ```
 packages/
   atlas-shared/          wire protocol, cryptography, tool manifests
-  atlas-backend/         FastAPI: identity, audit, realtime hub, persistence
+  atlas-backend/         FastAPI: identity, audit, realtime hub, tracker, persistence
   atlas-agent-windows/   the local agent: identity, transport, voice runtime
   atlas-voice/           wake word, VAD, recognition, speaker profile, speech
 e2e/                     end-to-end tests against a real server
@@ -56,6 +56,11 @@ docs/                    architecture, operations and milestone reports
 the protocol and the risk model cannot drift apart. `atlas-voice` depends on
 neither: it produces text and knows nothing about tools, permissions or the
 network.
+
+Tools declare which side runs them. Anything touching this machine runs on the
+agent; the tracker is a web service and runs on the backend, so a question about
+today's tasks is answerable when the laptop is off — and the credential for it
+never leaves the backend.
 
 ## Getting started (Windows)
 

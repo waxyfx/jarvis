@@ -96,6 +96,23 @@ class ToolRunner:
             return finish(ToolStatus.REFUSED, refusal=RefusalReason.UNKNOWN_TOOL)
         manifest = CATALOG.get(command.tool)
 
+        # 1a. Is it even this machine's job?
+        #
+        # Some tools run on the backend — the tracker is a web service, not a
+        # Windows capability — and one of those arriving here means something is
+        # wrong upstream rather than that a feature is missing. Refusing by name
+        # says which, where "not implemented" would send whoever reads it
+        # looking for an executor that was never meant to exist.
+        if manifest.runs_on != "agent":
+            return finish(
+                ToolStatus.REFUSED,
+                refusal=RefusalReason.UNKNOWN_TOOL,
+                failure=ToolFailure(
+                    code="wrong_side",
+                    message=f"{command.tool} runs on the backend; this agent does not execute it",
+                ),
+            )
+
         if manifest.version != command.tool_version:
             return finish(
                 ToolStatus.REFUSED,

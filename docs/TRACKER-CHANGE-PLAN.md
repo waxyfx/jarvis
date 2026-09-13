@@ -232,10 +232,44 @@ asked for.
 
 ---
 
-## 8. Still needed from the owner
+## 8. Built
 
-1. **The Vercel URL.** The project is `sunny`; the deployment hostname has not
-   been read from anywhere and should not be guessed.
+All of the above, on the JARVIS side, with nothing in Sunny changed and its
+working tree clean.
+
+| | |
+|---|---|
+| `TrackerProvider`, `SunnyTracker` | The protocol, and the only file that knows it is Sunny |
+| `summarise` | The digest, so eleven tasks do not arrive as eleven titles |
+| Ten catalogue entries | With the risk levels in §3, and no delete |
+| `runs_on` on the manifest | Which side of the wire a tool executes on |
+| Dispatcher branch | Backend tools run here and never become a signed command |
+| Descriptor filter | Tools this backend cannot run are not offered to the model |
+| Settings, runbook | `ATLAS_SUNNY_BASE_URL`, `ATLAS_SUNNY_TOKEN`, off by default |
+
+**That a tracker call never reaches the agent is proved, not asserted.** No
+agent is connected in the backend suite, so anything dispatched to one comes
+back `unreachable`; a tracker call that completes therefore completed somewhere
+else, and there is only one somewhere else. The control test sits beside it.
+
+The agent refuses a backend tool by name if one ever arrives, which is defence
+in depth rather than a reachable path: nothing dispatches one, and a signature
+would be required to try.
+
+**Still needed before any of it runs for real:** the Vercel hostname, and
+`JARVIS_API_TOKEN` present in the deployment's environment. Until then the
+tracker is absent by design — the tools are not offered, nothing is
+constructed, and the backend starts unchanged.
+
+---
+
+## 9. Still open
+
+1. **The Vercel URL.** The project is `sunny`; the hostname has not been read
+   from anywhere and should not be guessed.
 2. **`JARVIS_API_TOKEN` in the Vercel environment.** It exists locally. Whether
-   the deployment has it is not visible from here, and the integration cannot
-   work until it does.
+   the deployment has it is not visible from here.
+3. **What a spoken tracker answer sounds like.** The digest was designed against
+   the requirement, not against a recording. Step 2 above is not optional.
+
+---
