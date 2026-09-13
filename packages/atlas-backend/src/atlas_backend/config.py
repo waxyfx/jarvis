@@ -104,6 +104,23 @@ class Settings(BaseSettings):
     #: e2e/test_gemini_live.py tell you when behaviour shifts.
     gemini_model: str = "gemini-flash-latest"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+
+    # --------------------------------------------------------------- tracker
+    #: The owner's Life OS, reached over HTTP. **Backend only**, for the same
+    #: reason the Gemini key is: it is a credential for a remote service with
+    #: write access to their data, and it has no business on a laptop or a
+    #: phone.
+    #:
+    #: Absent either of these the tracker is unavailable, its tools are not
+    #: offered to the model, and nothing is constructed — off by default, as
+    #: Sunny's own side is.
+    #:
+    #: The URL is configuration rather than a constant so a local instance can
+    #: be used in development without a deployed backend ever being pointed at
+    #: someone's `localhost`.
+    sunny_base_url: str = ""
+    sunny_token: SecretStr | None = None
+    sunny_timeout_s: float = Field(default=15.0, gt=1.0, le=60.0)
     ai_request_timeout_s: float = Field(default=30.0, gt=1.0, le=300.0)
     #: Retries for transient upstream failures (429, 5xx). A rate limit is a
     #: "wait a moment", not a "cannot do that" — telling the user the model is

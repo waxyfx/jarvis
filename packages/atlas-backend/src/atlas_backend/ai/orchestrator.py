@@ -224,7 +224,13 @@ class Assistant:
         ]
         remaining_calls = self._settings.ai_max_tool_calls_per_turn
         has_external_content = False
-        descriptors = CATALOG.descriptors()
+        # Only what this backend can actually run. Offering a tracker tool with
+        # no tracker behind it would earn a refusal the model can do nothing
+        # about, and teach it to keep trying.
+        available = self._dispatcher.available_tools()
+        descriptors = tuple(
+            descriptor for descriptor in CATALOG.descriptors() if descriptor.name in available
+        )
 
         for iteration in range(1, self._settings.ai_max_iterations + 1):
             result.iterations = iteration

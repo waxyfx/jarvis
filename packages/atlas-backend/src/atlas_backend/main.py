@@ -25,6 +25,8 @@ from atlas_backend.logging import configure_logging, get_logger
 from atlas_backend.policy import ToolDispatcher
 from atlas_backend.ratelimit import SlidingWindowLimiter
 from atlas_backend.server_identity import ServerIdentity
+from atlas_backend.tracker.provider import TrackerProvider, TrackerUnavailableError
+from atlas_backend.tracker.sunny import SunnyTracker
 from atlas_backend.ws import Hub, ws_router
 
 __all__ = ["create_app"]
@@ -32,8 +34,36 @@ __all__ = ["create_app"]
 log = get_logger(__name__)
 
 
+def _build_tracker(settings: Settings) -> TrackerProvider | None:
+    """The tracker, if one is configured. Absent is the normal state.
+
+    Both halves are required and neither is guessed: without a URL there is
+    nowhere to ask, and without a token Sunny would refuse anyway. Returning
+    ``None`` removes the tracker tools from what the model is offered, so
+    nothing has to explain itself later.
+    """
+    token = settings.sunny_token.get_secret_value() if settings.sunny_token else ""
+    if not settings.sunny_base_url or not token:
+        return None
+    try:
+        return SunnyTracker(
+            base_url=settings.sunny_base_url,
+            token=token,
+            timeout_s=settings.sunny_timeout_s,
+        )
+    except TrackerUnavailableError as exc:
+        # A misconfigured tracker must not stop the backend starting: the rest
+        # of the assistant works without it, and a refusal to boot would take
+        # the machine down over an optional integration.
+        log.warning("tracker_unavailable", reason=str(exc))
+        return None
+
+
 def create_app(
-    settings: Settings | None = None, *, ai_provider: AIProvider | None = None
+    settings: Settings | None = None,
+    *,
+    ai_provider: AIProvider | None = None,
+    tracker: TrackerProvider | None = None,
 ) -> FastAPI:
     """Build the application.
 
@@ -41,6 +71,9 @@ def create_app(
         ai_provider: Overrides the configured provider. Used by tests to drive
             the pipeline with scripted model responses — the only way to make
             adversarial cases deterministic.
+        tracker: Overrides the configured tracker, for the same reason. Without
+            it a test would need a running Next.js app to prove that a tracker
+            call does not go to the agent.
     """
     resolved = settings or get_settings()
     configure_logging(level=resolved.log_level, json_output=resolved.is_production)
@@ -58,6 +91,7 @@ def create_app(
             hub=app.state.hub,
             server_identity=app.state.server_identity,
             settings=resolved,
+            tracker=tracker or _build_tracker(resolved),
         )
         app.state.pairing_limiter = SlidingWindowLimiter(
             limit=resolved.pairing_rate_limit_per_minute, window_s=60.0

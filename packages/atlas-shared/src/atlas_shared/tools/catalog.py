@@ -333,3 +333,270 @@ CATALOG.register(
         ),
     )
 )
+
+
+# --------------------------------------------------------------------------
+# tracker
+#
+# The owner's Life OS, reached by the backend over HTTP rather than by the
+# agent — see docs/TRACKER-CHANGE-PLAN.md. The tracker is on the internet, not
+# on the laptop, and a question about today's tasks should still be answerable
+# when the laptop is switched off.
+#
+# Reading is LOW. Writing splits: adding something is additive and trivially
+# undone, whereas completing, moving or re-prioritising changes what the owner
+# tracks *by*, and a misheard word doing that silently is the harm worth
+# guarding against. Those are MEDIUM, so the Policy Engine holds them and the
+# owner hears which task before anything happens.
+#
+# There is deliberately no tracker.delete_task. Sunny has one; this does not.
+# Recognition in this project has been measured turning an open into a close,
+# and a misheard delete is not recoverable by apologising — the same reasoning
+# that keeps fs.delete out of reach.
+# --------------------------------------------------------------------------
+
+
+class TrackerReadArgs(_Args):
+    offset: int | None = Field(
+        default=None,
+        ge=0,
+        le=500,
+        description=(
+            "Leave unset for an overview: how many, how urgent, what is next. "
+            "Set it to name items individually starting at that position — this "
+            "is how you answer 'tell me the rest' after offering to."
+        ),
+    )
+
+
+CATALOG.register(
+    ToolManifest(
+        name="tracker.today",
+        version=1,
+        summary="What is on the owner's plate today: counts, urgency and the next thing due.",
+        args_model=TrackerReadArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=20.0,
+        runs_on="backend",
+        requires_capabilities=("tracker",),
+        rate_limit_per_minute=30,
+    )
+)
+
+
+class TrackerUpcomingArgs(_Args):
+    days: int = Field(default=7, ge=1, le=90, description="How far ahead to look.")
+    offset: int | None = Field(default=None, ge=0, le=500, description="As for tracker.today.")
+
+
+CATALOG.register(
+    ToolManifest(
+        name="tracker.upcoming",
+        version=1,
+        summary="Tasks coming up over the next few days.",
+        args_model=TrackerUpcomingArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=20.0,
+        runs_on="backend",
+        requires_capabilities=("tracker",),
+        rate_limit_per_minute=30,
+    )
+)
+
+
+CATALOG.register(
+    ToolManifest(
+        name="tracker.schedule",
+        version=1,
+        summary="Today's timed commitments, in the order they happen.",
+        args_model=TrackerReadArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=20.0,
+        runs_on="backend",
+        requires_capabilities=("tracker",),
+        rate_limit_per_minute=30,
+    )
+)
+
+
+class TrackerGoalsArgs(_Args):
+    """No arguments: the owner's goals and how far along each is."""
+
+
+CATALOG.register(
+    ToolManifest(
+        name="tracker.goals",
+        version=1,
+        summary="The owner's goals and their progress.",
+        args_model=TrackerGoalsArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=20.0,
+        runs_on="backend",
+        requires_capabilities=("tracker",),
+        rate_limit_per_minute=30,
+    )
+)
+
+
+class TrackerHabitsArgs(_Args):
+    """No arguments: today's habits, whether each is done, and the streak."""
+
+
+CATALOG.register(
+    ToolManifest(
+        name="tracker.habits",
+        version=1,
+        summary="Today's habits: which are done and how long each streak is.",
+        args_model=TrackerHabitsArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=20.0,
+        runs_on="backend",
+        requires_capabilities=("tracker",),
+        rate_limit_per_minute=30,
+    )
+)
+
+
+class TrackerAddTaskArgs(_Args):
+    title: str = Field(min_length=1, max_length=300, description="What the task is.")
+    priority: str = Field(
+        default="medium",
+        pattern="^(low|medium|high|urgent)$",
+        description="One of low, medium, high, urgent. The tracker's own four levels.",
+    )
+    deadline: str | None = Field(
+        default=None,
+        max_length=40,
+        description=(
+            "ISO 8601, with a time when the owner gave one. Leave unset rather "
+            "than guessing a date they did not say."
+        ),
+    )
+
+
+CATALOG.register(
+    ToolManifest(
+        name="tracker.add_task",
+        version=1,
+        summary="Add a task to the owner's tracker.",
+        args_model=TrackerAddTaskArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=20.0,
+        runs_on="backend",
+        requires_capabilities=("tracker",),
+        side_effects=("tracker",),
+        rate_limit_per_minute=20,
+    )
+)
+
+
+class TrackerAddGoalArgs(_Args):
+    title: str = Field(min_length=1, max_length=300, description="What the goal is.")
+    target_date: str | None = Field(
+        default=None, max_length=20, description="ISO date, if the owner named one."
+    )
+
+
+CATALOG.register(
+    ToolManifest(
+        name="tracker.add_goal",
+        version=1,
+        summary="Add a goal to the owner's tracker.",
+        args_model=TrackerAddGoalArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=20.0,
+        runs_on="backend",
+        requires_capabilities=("tracker",),
+        side_effects=("tracker",),
+        rate_limit_per_minute=20,
+    )
+)
+
+
+class TrackerTaskRefArgs(_Args):
+    task_id: str = Field(
+        min_length=1,
+        max_length=64,
+        description=(
+            "The task's id, from a tracker read in this conversation. Never "
+            "invent one: if you do not have it, read the tasks first."
+        ),
+    )
+
+
+CATALOG.register(
+    ToolManifest(
+        name="tracker.complete_task",
+        version=1,
+        # Not reversible in the sense that matters: the tracker's toggle also
+        # advances streaks and recurrence, so undoing it is not simply flipping
+        # a flag back.
+        summary="Mark one of the owner's tasks as done.",
+        args_model=TrackerTaskRefArgs,
+        base_risk=RiskLevel.MEDIUM,
+        reversible=False,
+        timeout_s=20.0,
+        runs_on="backend",
+        requires_capabilities=("tracker",),
+        side_effects=("tracker",),
+        rate_limit_per_minute=20,
+    )
+)
+
+
+class TrackerRescheduleArgs(_Args):
+    task_id: str = Field(min_length=1, max_length=64, description="As for complete_task.")
+    deadline: str = Field(
+        min_length=4,
+        max_length=40,
+        description="ISO 8601. Include the time when the owner gave one.",
+    )
+
+
+CATALOG.register(
+    ToolManifest(
+        name="tracker.reschedule_task",
+        version=1,
+        summary="Move one of the owner's tasks to a different date or time.",
+        args_model=TrackerRescheduleArgs,
+        base_risk=RiskLevel.MEDIUM,
+        reversible=False,
+        timeout_s=20.0,
+        runs_on="backend",
+        requires_capabilities=("tracker",),
+        side_effects=("tracker",),
+        rate_limit_per_minute=20,
+    )
+)
+
+
+class TrackerPriorityArgs(_Args):
+    task_id: str = Field(min_length=1, max_length=64, description="As for complete_task.")
+    priority: str = Field(
+        pattern="^(low|medium|high|urgent)$",
+        description="One of low, medium, high, urgent.",
+    )
+
+
+CATALOG.register(
+    ToolManifest(
+        name="tracker.set_priority",
+        version=1,
+        summary="Change how urgent one of the owner's tasks is.",
+        args_model=TrackerPriorityArgs,
+        base_risk=RiskLevel.MEDIUM,
+        reversible=False,
+        timeout_s=20.0,
+        runs_on="backend",
+        requires_capabilities=("tracker",),
+        side_effects=("tracker",),
+        rate_limit_per_minute=20,
+    )
+)

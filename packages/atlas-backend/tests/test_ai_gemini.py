@@ -66,6 +66,27 @@ def candidate(parts: list[dict[str, Any]], finish: str = "STOP") -> dict[str, An
 # ------------------------------------------------------------------ schemas
 
 
+def _schema_keywords(node: object) -> set[str]:
+    """Every key used as a schema keyword, ignoring the names of properties.
+
+    A key under `properties` is what a field is called; a key beside `type` is
+    a keyword. Only the second kind is what Gemini refuses.
+    """
+    found: set[str] = set()
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "properties" and isinstance(value, dict):
+                for child in value.values():
+                    found |= _schema_keywords(child)
+                continue
+            found.add(key)
+            found |= _schema_keywords(value)
+    elif isinstance(node, list):
+        for item in node:
+            found |= _schema_keywords(item)
+    return found
+
+
 class TestFunctionDeclarations:
     def test_every_declared_tool_converts(self) -> None:
         for descriptor in CATALOG.descriptors():
@@ -98,8 +119,20 @@ class TestFunctionDeclarations:
         ["$defs", "$ref", "title", "additionalProperties", "minLength", "maximum"],
     )
     def test_unsupported_keywords_are_stripped(self, unsupported: str) -> None:
-        rendered = json.dumps([to_function_declaration(d) for d in CATALOG.descriptors()])
-        assert unsupported not in rendered
+        """Checked as schema *keys*, not as text anywhere in the JSON.
+
+        The substring version of this passed for a year and then failed the day
+        a tool gained a field called `title` — which is a perfectly ordinary
+        property name and not the JSON Schema keyword at all. A test that cannot
+        tell those apart reports a problem that is not there, and would have
+        hidden one that was.
+        """
+        for descriptor in CATALOG.descriptors():
+            # A tool with no arguments has no parameters block at all, which is
+            # itself correct: Gemini refuses an empty object schema.
+            declaration = to_function_declaration(descriptor)
+            keywords = _schema_keywords(declaration.get("parameters", {}))
+            assert unsupported not in keywords, descriptor.name
 
     def test_required_fields_survive(self) -> None:
         search = next(d for d in CATALOG.descriptors() if d.name == "fs.search")

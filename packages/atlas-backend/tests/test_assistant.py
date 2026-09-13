@@ -93,7 +93,21 @@ class TestOrdinaryTurns:
             say(c, token, "привет")
 
         offered = {tool.name for tool in provider.requests[0].tools}
-        assert offered == CATALOG.names()
+        assert offered <= CATALOG.names()
+        assert "system.metrics" in offered
+
+    def test_tools_this_backend_cannot_run_are_not_offered(self, settings) -> None:  # type: ignore[no-untyped-def]
+        """The catalogue says what exists; what is offered is what is reachable.
+
+        No tracker is configured in this suite, so the tracker tools have
+        nowhere to go. Offering them anyway would earn the model a refusal it
+        could do nothing about, and teach it to keep trying.
+        """
+        with assistant(settings, [text_reply("ок")]) as (c, provider, token):
+            say(c, token, "привет")
+
+        offered = {tool.name for tool in provider.requests[0].tools}
+        assert not any(name.startswith("tracker.") for name in offered)
 
     def test_a_clarifying_question_is_returned_as_is(self, settings) -> None:  # type: ignore[no-untyped-def]
         question = "Какой именно Chrome — обычный или Canary?"
