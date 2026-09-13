@@ -239,6 +239,29 @@ Rotate if the value was ever pasted into a chat, a log, an issue or a shell
 history that others can read. There is no way to tell whether a shared secret
 has been copied, so the question is not "was it used" but "could it have been".
 
+### The tracker must require a login
+
+Sunny defaults to `REQUIRE_AUTH=false`, which is a deliberate choice recorded in
+its own code: a personal app with no sign-in. On a laptop that is reasonable. On
+a public deployment it means anyone who knows the hostname reads and writes the
+owner's data, which is what was found here — an unauthenticated `GET
+/api/tasks?scope=today` returned real tasks.
+
+Production now sets `REQUIRE_AUTH=true`. Three environment variables make that
+safe rather than merely closed, and the order matters:
+
+1. `JARVIS_API_TOKEN` — without it in the deployment, turning on auth locks the
+   assistant out. The machine token is checked *before* the auth requirement,
+   which is why the assistant keeps working.
+2. `JARVIS_USER_EMAIL` — the account the machine token acts as. Without it Sunny
+   falls back to whichever user its database returns first.
+3. `REQUIRE_AUTH=true` — last, once the other two are in place.
+
+Environment changes need a deployment to take effect. Redeploy the existing
+build rather than pushing from a working copy: `vercel redeploy <deployment>`
+re-runs the same code with the new environment, where `vercel --prod` would
+deploy whatever is on disk, including work in progress.
+
 ### Checking it works
 
 With both settings present, ask the assistant something the tracker answers —
