@@ -143,6 +143,8 @@ class NotificationKind(StrEnum):
     SUMMARY = "summary"
     #: Hours at the desk without a break.
     WELLNESS = "wellness"
+    #: A few minutes before a prayer time.
+    PRAYER = "prayer"
 
 
 class NotificationPriority(StrEnum):

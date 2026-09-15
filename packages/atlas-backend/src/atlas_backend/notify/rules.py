@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 
 from atlas_backend.activity.summary import ActivityDigest
+from atlas_backend.prayer.times import PrayerTimes
 from atlas_backend.tracker.provider import Task
 from atlas_shared.enums import NotificationKind, NotificationPriority
 from atlas_shared.ids import new_ulid
@@ -58,6 +59,9 @@ class Schedule:
     long_session_minutes: int = 90
     #: And how long before it says it again, for someone who did not stop.
     long_session_repeat_minutes: int = 60
+    #: How long before each prayer to say something. Zero switches the
+    #: reminders off while leaving the question answerable by asking.
+    prayer_reminder_minutes: int = 10
     #: Spoken notifications are held back outside these hours — shown, not said.
     quiet_from_hour: int = 23
     quiet_until_hour: int = 7
@@ -77,6 +81,9 @@ class Moment:
     #: configured, which the rules treat as "nothing to say" rather than as an
     #: error.
     tasks: Sequence[Task] = ()
+    #: Today's prayer times, when the owner has configured a location.
+    #: Absent is the normal state and means the rule has nothing to say.
+    prayers: PrayerTimes | None = None
     activity: ActivityDigest = field(default_factory=ActivityDigest)
     #: Whether the owner is actually at the machine right now. Nothing is said
     #: to an empty chair.
@@ -302,6 +309,41 @@ def _long_session(moment: Moment, schedule: Schedule) -> list[Planned]:
     ]
 
 
+def _prayer_due(moment: Moment, schedule: Schedule) -> list[Planned]:
+    """A few minutes before each prayer.
+
+    Not at the time itself. A reminder that arrives exactly at Maghrib is a
+    reminder about something already happening; the point is the minutes before,
+    which are what let someone finish what they are doing and go.
+
+    Sunrise is skipped: it is a boundary rather than a prayer.
+    """
+    if not moment.present or moment.prayers is None or schedule.prayer_reminder_minutes <= 0:
+        return []
+
+    window = timedelta(minutes=schedule.prayer_reminder_minutes)
+    planned: list[Planned] = []
+
+    for prayer, at in moment.prayers.prayers():
+        if not (moment.now <= at <= moment.now + window):
+            continue
+        minutes = max(1, round((at - moment.now).total_seconds() / 60))
+        planned.append(
+            Planned(
+                key=f"prayer:{prayer.value}:{moment.now.date().isoformat()}",
+                notification=_notify(
+                    NotificationKind.PRAYER,
+                    prayer.russian,
+                    f"Через {minutes} мин — {prayer.russian}, в {at.strftime('%H:%M')}.",
+                    now=moment.now,
+                    schedule=schedule,
+                ),
+            )
+        )
+
+    return planned
+
+
 def _count(total: int) -> str:
     """ "одна задача", "три задачи", "одиннадцать задач" — spoken, not printed."""
     if total % 10 == 1 and total % 100 != 11:
@@ -313,7 +355,7 @@ def _count(total: int) -> str:
 
 #: In the order they would be said if several were due at once, which is also
 #: the order of how much they matter.
-RULES = (_due_soon, _morning_briefing, _long_session, _evening_summary)
+RULES = (_prayer_due, _due_soon, _morning_briefing, _long_session, _evening_summary)
 
 
 def decide_all(moment: Moment, schedule: Schedule, *, already_said: set[str]) -> list[Planned]:

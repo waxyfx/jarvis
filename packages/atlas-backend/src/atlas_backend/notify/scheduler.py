@@ -32,6 +32,7 @@ from atlas_backend.db.session import Database
 from atlas_backend.logging import get_logger
 from atlas_backend.notify.notifier import Notifier
 from atlas_backend.notify.rules import Moment, Schedule, decide_all
+from atlas_backend.prayer.tools import PrayerSettings
 from atlas_backend.reports.writer import DailyReportWriter
 from atlas_backend.tracker.provider import Task, TrackerError, TrackerProvider
 from atlas_backend.ws.hub import Hub
@@ -58,6 +59,7 @@ class ProactiveScheduler:
         database: Database,
         settings: Settings,
         tracker: TrackerProvider | None = None,
+        prayer: PrayerSettings | None = None,
         schedule: Schedule | None = None,
     ) -> None:
         self._hub = hub
@@ -65,12 +67,16 @@ class ProactiveScheduler:
         self._database = database
         self._settings = settings
         self._tracker = tracker
+        #: Absent unless the owner has given a location. Absent means the
+        #: prayer rule has nothing to say, not that it is broken.
+        self._prayer = prayer
         self._schedule = schedule or Schedule(
             briefing_hour=settings.briefing_hour,
             briefing_until_hour=settings.briefing_until_hour,
             evening_hour=settings.evening_summary_hour,
             evening_until_hour=settings.evening_summary_until_hour,
             long_session_minutes=settings.long_session_minutes,
+            prayer_reminder_minutes=settings.prayer_reminder_minutes,
             quiet_from_hour=settings.quiet_from_hour,
             quiet_until_hour=settings.quiet_until_hour,
         )
@@ -153,6 +159,7 @@ class ProactiveScheduler:
         moment = Moment(
             now=now,
             tasks=await self._tasks(),
+            prayers=self._prayer.times(now) if self._prayer is not None else None,
             activity=activity,
             present=present,
         )

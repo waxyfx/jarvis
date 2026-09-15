@@ -31,6 +31,12 @@ from atlas_backend.policy.engine import (
     PolicyRequest,
     decide,
 )
+from atlas_backend.prayer.tools import (
+    PRAYER_TOOLS,
+    PrayerSettings,
+    PrayerToolError,
+    run_prayer_tool,
+)
 from atlas_backend.server_identity import ServerIdentity
 from atlas_backend.tracker.provider import (
     TrackerError,
@@ -47,7 +53,7 @@ from atlas_shared.protocol.messages import ToolExecute, ToolResult, build_envelo
 from atlas_shared.tools.catalog import CATALOG
 from atlas_shared.tools.manifest import RiskContext
 
-__all__ = ["CallStatus", "ToolDispatcher"]
+__all__ = ["CallStatus", "ToolDispatcher", "prayer_settings_from"]
 
 log = get_logger(__name__)
 
@@ -78,6 +84,7 @@ class ToolDispatcher:
         settings: Settings,
         tracker: TrackerProvider | None = None,
         web: WebTools | None = None,
+        prayer: PrayerSettings | None = None,
     ) -> None:
         self._hub = hub
         self._identity = server_identity
@@ -90,6 +97,10 @@ class ToolDispatcher:
         #: the default is on, and the setting exists for the case where the
         #: backend should not be reaching the internet at all.
         self._web = web if web is not None else (WebTools() if settings.web_tools_enabled else None)
+        #: Absent unless the owner's coordinates are configured. Prayer times
+        #: for the wrong city are worse than no prayer times, and there is no
+        #: honest way to guess a location from a timezone.
+        self._prayer = prayer if prayer is not None else prayer_settings_from(settings)
 
     def available_tools(self) -> frozenset[str]:
         """Tool names this dispatcher can actually run.
@@ -103,6 +114,8 @@ class ToolDispatcher:
             missing |= {name for name in CATALOG.names() if name.startswith("tracker.")}
         if self._web is None:
             missing |= set(WEB_TOOLS)
+        if self._prayer is None:
+            missing |= set(PRAYER_TOOLS)
         return frozenset(CATALOG.names() - missing)
 
     def risk_context(self) -> RiskContext:
@@ -206,7 +219,7 @@ class ToolDispatcher:
         started = time.monotonic()
         try:
             result = await self._run_backend_tool(session, call)
-        except (TrackerError, WebToolError, ActivityToolError) as exc:
+        except (TrackerError, WebToolError, ActivityToolError, PrayerToolError) as exc:
             call.status = CallStatus.COMPLETED
             call.completed_at = utc_now()
             call.duration_ms = int((time.monotonic() - started) * 1000)
@@ -247,6 +260,11 @@ class ToolDispatcher:
         name was in the catalogue before it got here, so this chooses between
         known things rather than parsing one.
         """
+        if call.tool_name in PRAYER_TOOLS:
+            if self._prayer is None:
+                raise PrayerToolError("I do not know where you are")
+            return run_prayer_tool(self._prayer, utc_now(), call.tool_name, call.args)
+
         if call.tool_name in ACTIVITY_TOOLS:
             return await run_activity_tool(session, call.device_id, call.tool_name, call.args)
 
@@ -396,3 +414,38 @@ class ToolDispatcher:
             device_id=call.device_id,
             payload=payload,
         )
+
+
+def prayer_settings_from(settings: Settings) -> PrayerSettings | None:
+    """The owner's location, if they have given one.
+
+    Both coordinates are required and neither is guessed. A timezone narrows a
+    city down to a few hundred kilometres, which moves Maghrib by twenty
+    minutes — close enough to look right and wrong enough to matter.
+    """
+    if (
+        not settings.prayer_enabled
+        or settings.prayer_latitude is None
+        or settings.prayer_longitude is None
+    ):
+        return None
+
+    from atlas_backend.prayer.times import AsrMethod
+
+    return PrayerSettings(
+        latitude=settings.prayer_latitude,
+        longitude=settings.prayer_longitude,
+        zone=_zone(settings.owner_timezone),
+        method=settings.prayer_method,
+        asr=AsrMethod(settings.prayer_asr),
+    )
+
+
+def _zone(name: str) -> Any:
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        log.error("unknown_timezone", configured=name, using="UTC")
+        return ZoneInfo("UTC")

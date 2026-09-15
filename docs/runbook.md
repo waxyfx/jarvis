@@ -348,6 +348,38 @@ The one setting that can actually break it is the timezone. An unknown name
 falls back to UTC and logs `unknown_timezone`; if the briefing arrives in the
 middle of the night, that log line is the first thing to look for.
 
+## Prayer times
+
+Off until the owner's coordinates are given: prayer times for the wrong city are
+worse than none, and a timezone narrows a location down to a few hundred
+kilometres, which moves Maghrib by twenty minutes.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `ATLAS_PRAYER_ENABLED` | `true` | Whether to compute them at all |
+| `ATLAS_PRAYER_LATITUDE` / `_LONGITUDE` | unset | **Both required.** Almaty is `43.238` / `76.889` |
+| `ATLAS_PRAYER_METHOD` | `mwl` | `mwl`, `isna`, `egypt`, `makkah`, `karachi`, `tehran` |
+| `ATLAS_PRAYER_ASR` | `standard` | `hanafi` is about an hour later |
+| `ATLAS_PRAYER_REMINDER_MINUTES` | `10` | Minutes before each prayer. `0` keeps the times answerable and stops the reminders |
+
+Computed on this machine, never fetched: a free API would carry the owner's
+coordinates and the fact that they pray to a third party, daily, for a page of
+trigonometry. It also works with the internet down.
+
+**Check one day against your own mosque before trusting it.** Sunrise and sunset
+are astronomy and have one right answer; Fajr and Isha depend on which authority
+you follow, and the methods above disagree by twenty minutes or more at this
+latitude. If everything is consistently out by the same amount, it is the
+method; if only Asr is out by about an hour, it is the school.
+
+**Kazakhstan moved to UTC+5 in March 2024.** A timetable printed before then is
+an hour later than what this computes, and that difference looks exactly like a
+bug until you know.
+
+Far enough north there are summer nights when the sun never reaches the twilight
+angle. Those prayers come back absent rather than guessed, and the answer says
+which ones.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |

@@ -173,6 +173,25 @@ class Settings(BaseSettings):
     #: likely still awake to see it appear. Unlike the notifications, it does
     #: not require anyone to be at the machine.
     daily_report_hour: int = Field(default=22, ge=0, le=23)
+
+    # ------------------------------------------------------- prayer times (M5)
+    #: Computed on this machine, never fetched. See atlas_backend/prayer/times.py
+    #: for why, and for why the method below is a setting rather than a constant.
+    #:
+    #: Off unless coordinates are given: prayer times for the wrong city are
+    #: worse than none, and guessing them from the timezone would be a guess.
+    prayer_enabled: bool = True
+    prayer_latitude: float | None = Field(default=None, ge=-90.0, le=90.0)
+    prayer_longitude: float | None = Field(default=None, ge=-180.0, le=180.0)
+    #: One of the keys in atlas_backend.prayer.times.METHODS. The angles differ
+    #: between authorities by twenty minutes or more at this latitude, so this
+    #: is worth checking against a local timetable once.
+    prayer_method: str = "mwl"
+    #: "standard" (Shafi'i and others) or "hanafi", which is about an hour later.
+    prayer_asr: str = "standard"
+    #: How long before each prayer to say something. Zero switches the
+    #: reminders off while leaving the question answerable.
+    prayer_reminder_minutes: int = Field(default=10, ge=0, le=60)
     ai_request_timeout_s: float = Field(default=30.0, gt=1.0, le=300.0)
     #: Retries for transient upstream failures (429, 5xx). A rate limit is a
     #: "wait a moment", not a "cannot do that" — telling the user the model is

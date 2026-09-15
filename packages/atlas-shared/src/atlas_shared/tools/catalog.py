@@ -728,3 +728,38 @@ CATALOG.register(
         rate_limit_per_minute=20,
     )
 )
+
+
+# --------------------------------------------------------------------------
+# prayer
+#
+# "Во сколько магриб?" — answered from the date and a pair of coordinates,
+# computed on the backend. No network call and no third party: the free APIs
+# for this would carry the owner's location and the fact that they pray, daily,
+# for a page of trigonometry.
+#
+# LOW, and reads nothing at all. The only argument it could take is a date, and
+# it does not take one: "today" is the question people ask, and a model free to
+# pass a date would eventually pass the wrong one with no way for the listener
+# to tell.
+# --------------------------------------------------------------------------
+
+
+class PrayerTodayArgs(_Args):
+    """No arguments: today's prayer times, and which one is next."""
+
+
+CATALOG.register(
+    ToolManifest(
+        name="prayer.today",
+        version=1,
+        summary="Today's prayer times, and how long until the next one.",
+        args_model=PrayerTodayArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=10.0,
+        runs_on="backend",
+        requires_capabilities=("prayer",),
+        rate_limit_per_minute=20,
+    )
+)

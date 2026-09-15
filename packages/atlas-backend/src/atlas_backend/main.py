@@ -24,6 +24,7 @@ from atlas_backend.errors import install_exception_handlers
 from atlas_backend.logging import configure_logging, get_logger
 from atlas_backend.notify import Notifier, ProactiveScheduler
 from atlas_backend.policy import ToolDispatcher
+from atlas_backend.policy.service import prayer_settings_from
 from atlas_backend.ratelimit import SlidingWindowLimiter
 from atlas_backend.server_identity import ServerIdentity
 from atlas_backend.tracker.provider import TrackerProvider, TrackerUnavailableError
@@ -120,6 +121,7 @@ def create_app(
                 database=app.state.database,
                 settings=resolved,
                 tracker=resolved_tracker,
+                prayer=prayer_settings_from(resolved),
             )
             if resolved.proactive_enabled
             else None
