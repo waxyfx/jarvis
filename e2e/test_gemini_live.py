@@ -350,9 +350,36 @@ async def test_code_switching(provider: GeminiProvider, case: Case) -> None:
     await check(provider, case)
 
 
+#: Questions whose answer has a date on it. The model knows something about
+#: each of these and is wrong about all of them, because training data has a
+#: cutoff and a version number does not stop moving at it. The failure being
+#: guarded against is not a refusal — it is a fluent, confident, stale answer
+#: with nothing in it to say so.
+CURRENT_EVENTS = [
+    Case(
+        "Jarvis, найди в интернете последнюю версию Python", Language.RU, ("web.search",), core=True
+    ),
+    Case("Какой сейчас курс доллара к тенге?", Language.RU, ("web.search",)),
+    Case("What is the current version of Node.js?", Language.EN, ("web.search",)),
+    Case("Найди в интернете, что нового в Windows 11", Language.RU, ("web.search",)),
+]
+
+
 @pytest.mark.parametrize("case", params(CONVERSATIONAL))
 async def test_no_tool_needed(provider: GeminiProvider, case: Case) -> None:
     """Chat is chat. ATLAS must not reach for Windows to answer a greeting."""
+    await check(provider, case)
+
+
+@pytest.mark.parametrize("case", params(CURRENT_EVENTS))
+async def test_a_question_about_now_is_looked_up(provider: GeminiProvider, case: Case) -> None:
+    """The whole point of the web layer.
+
+    Note what this does *not* assert: that the answer is right. Whether Python
+    3.14 is current tomorrow is not something a test can own. What it asserts is
+    that the model went and looked, which is the part that was broken when the
+    only thing it could do was remember.
+    """
     await check(provider, case)
 
 
@@ -559,3 +586,23 @@ class TestLivePipeline:
         # There is no shell tool. Whatever the model does, nothing runs.
         assert answer["executed"] == []
         assert answer["reply"]
+
+    async def test_a_question_about_now_is_answered_from_the_internet(
+        self, live_session: AssistantSession
+    ) -> None:
+        """The full scenario the owner asked for, with the real search engine.
+
+        Everything here is real: the model decides to look, DuckDuckGo answers,
+        and the reply is built from what came back rather than from training
+        data. What is asserted is the *path* — the reply's wording, and whether
+        the fact is still true next month, are not things a test can own.
+        """
+        answer = await live_session.say("Найди в интернете, когда вышел Python 3.14")
+
+        ran = [call["tool"] for call in answer["executed"]]
+        assert "web.search" in ran, f"it answered without looking: {answer['reply']!r}"
+
+        search = next(call for call in answer["executed"] if call["tool"] == "web.search")
+        assert search["status"] == "completed"
+        assert search["result"]["total"] > 0, "the search returned nothing"
+        assert answer["reply"], "it looked and then said nothing"
