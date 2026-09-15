@@ -139,6 +139,53 @@ SCENARIOS: tuple[Scenario, ...] = (
         barge_in=True,
         synthetic=None,
     ),
+    # Everything below was built after M4. The seven scenarios above accept the
+    # voice engine; these accept the assistant the owner actually asked for, in
+    # their own voice, which is the only way any of it can be accepted.
+    #
+    # All of them need a person: synthesising the owner's voice to pass a test
+    # about the owner's voice would prove nothing.
+    Scenario(
+        name="tracker_today",
+        instruction="Скажите:  Jarvis, что у меня сегодня?",
+        expect_words=("сегодня", "today"),
+        expect_tool="tracker.today",
+        synthetic=None,
+    ),
+    Scenario(
+        name="tracker_add_task",
+        instruction=(
+            "Скажите:  Jarvis, добавь задачу позвонить в банк"
+            "   — создаст настоящую задачу в Sunny; удалите её сами, если не нужна"
+        ),
+        expect_words=("задач", "банк"),
+        expect_tool="tracker.add_task",
+        synthetic=None,
+    ),
+    Scenario(
+        name="web_search",
+        instruction="Скажите:  Jarvis, найди в интернете последнюю версию Python",
+        expect_words=("интернет", "python", "найди"),
+        expect_tool="web.search",
+        synthetic=None,
+    ),
+    Scenario(
+        name="activity_today",
+        instruction="Скажите:  Jarvis, сколько я сегодня работал?",
+        expect_words=("работал", "сегодня"),
+        expect_tool="activity.today",
+        synthetic=None,
+    ),
+    Scenario(
+        name="prayer_today",
+        instruction=(
+            "Скажите:  Jarvis, во сколько магриб?"
+            "   — нужны ATLAS_PRAYER_LATITUDE и ATLAS_PRAYER_LONGITUDE в .env"
+        ),
+        expect_words=("магриб", "намаз"),
+        expect_tool="prayer.today",
+        synthetic=None,
+    ),
 )
 
 

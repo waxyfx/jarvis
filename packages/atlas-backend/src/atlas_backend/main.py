@@ -23,6 +23,7 @@ from atlas_backend.db.session import Database
 from atlas_backend.errors import install_exception_handlers
 from atlas_backend.logging import configure_logging, get_logger
 from atlas_backend.notify import Notifier, ProactiveScheduler
+from atlas_backend.personality.engine import PersonalityProvider, RuleBasedPersonality
 from atlas_backend.policy import ToolDispatcher
 from atlas_backend.policy.service import prayer_settings_from
 from atlas_backend.ratelimit import SlidingWindowLimiter
@@ -68,6 +69,7 @@ def create_app(
     ai_provider: AIProvider | None = None,
     tracker: TrackerProvider | None = None,
     web: WebTools | None = None,
+    personality: PersonalityProvider | None = None,
 ) -> FastAPI:
     """Build the application.
 
@@ -81,6 +83,8 @@ def create_app(
         web: Overrides the web tools, so a test can assert what was searched and
             fetched without reaching the internet — and so no test run can put
             traffic on someone else's server.
+        personality: Overrides how replies are worded. A test uses it to prove
+            that a layer which fails does not cost the owner their answer.
     """
     resolved = settings or get_settings()
     configure_logging(level=resolved.log_level, json_output=resolved.is_production)
@@ -134,7 +138,13 @@ def create_app(
             provider = GeminiProvider(resolved)
         app.state.ai_provider = provider
         app.state.assistant = (
-            Assistant(provider=provider, dispatcher=app.state.dispatcher, settings=resolved)
+            Assistant(
+                provider=provider,
+                dispatcher=app.state.dispatcher,
+                settings=resolved,
+                personality=personality
+                or (RuleBasedPersonality() if resolved.personality_enabled else None),
+            )
             if provider is not None
             else None
         )

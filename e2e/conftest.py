@@ -81,6 +81,12 @@ def backend_settings(allowed_roots: tuple[str, ...] = ()):  # type: ignore[no-un
         # deployment — and a write would reach it.
         sunny_base_url="",
         sunny_token=None,
+        # Off for the same reason as in the per-package conftest: these tests
+        # assert what the assistant *did*, and a layer that rewords the reply
+        # would have them asserting how it was phrased instead. The layer has
+        # its own coverage in test_personality.py and
+        # test_assistant_personality.py.
+        personality_enabled=False,
     )
 
 

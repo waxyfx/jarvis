@@ -79,6 +79,10 @@ def _make_settings():  # type: ignore[no-untyped-def]
         # their live deployment — and a write test would reach it. A test suite
         # must not depend on, or touch, whatever happens to be in someone's
         # environment.
+        # Off here so the suite keeps asserting *what* the assistant said
+        # rather than how it was worded. The layer itself is covered in
+        # test_personality.py, and end to end in test_assistant_personality.py.
+        personality_enabled=False,
         sunny_base_url="",
         sunny_token=None,
     )
