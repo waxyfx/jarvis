@@ -6,7 +6,7 @@ once. This is the replacement: one row per component, kept current.
 **"Tested" means what was actually checked**, not what exists. A component with
 a hundred unit tests and no run against the real thing says so.
 
-Last updated: 2026-09-15.
+Last updated: 2026-09-15 (evening).
 
 ---
 
@@ -60,7 +60,8 @@ Last updated: 2026-09-15.
 | `web.search` (DuckDuckGo Lite) | done | 10 unit, live, live Gemini chooses it | single provider |
 | `web.read` + SSRF refusals | done | 23 unit, 18 gate | — |
 | `activity.today` | done | 16 + 7, live through the stack | — |
-| Prayer computation | done | 51 unit, from first principles | coordinates `USER_ACTION_REQUIRED` |
+| Prayer computation | done | 55 unit; adhanpy, cross-checked against our own across 5 cities | coordinates `USER_ACTION_REQUIRED` |
+| Ad-hoc reminders | done | 15 unit + integration | — |
 | Prayer timetable (supplied) | validated | 24 unit | nothing reads a file yet |
 | Personality | done | 95 + 8, live | — |
 
@@ -70,15 +71,17 @@ Last updated: 2026-09-15.
 |---|---|---|---|
 | Local launcher | done | cold start to connected, ~10 s | — |
 | Dockerfile, compose, Caddy | written | **never built** | no Docker here |
-| One-command VPS setup | in progress | — | — |
-| Moving the existing data and identity | in progress | — | — |
+| One-command VPS setup | done | scripts written; `docker compose build` **not run** | no Docker here |
+| Moving the existing data and identity | done | dump→restore→`verify_chain ok` on the real database | — |
+| Backend runs with production deps only | done | venv built from the image's own requirement set | — |
 | The VPS itself | — | — | `USER_ACTION_REQUIRED`: a host |
 
 ## 7. iPhone and remote control
 
 | Component | Status | Tested | Blockers |
 |---|---|---|---|
-| SwiftUI app | not started | — | needs a Mac to build; source can be written |
+| SwiftUI app | written | **never compiled**; signing contract pinned by a test | needs a Mac |
+| `GET /v1/overview` for the phone | done | 11 integration | — |
 | Push notifications | not started | — | Apple developer account |
 | Remote screen, touchpad | not started | — | after the app |
 
