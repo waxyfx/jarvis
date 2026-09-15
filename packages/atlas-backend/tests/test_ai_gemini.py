@@ -593,3 +593,57 @@ class TestFallingBackToAnotherModel:
             await provider.complete(request_for())
 
         assert len(asked) == 1
+
+
+class TestTheRetryBudgetGoesToTheLastModel:
+    """Otherwise the fallback turns one failure into a timeout.
+
+    Observed: the primary model was out of daily quota, spent its whole retry
+    budget on 429s, and the fallback then ran past the turn's ninety-second
+    limit — so the owner was told the model timed out when what actually
+    happened was that the quota was spent.
+    """
+
+    async def test_the_first_model_is_tried_once(self) -> None:
+        asked: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            asked.append(request.url.path)
+            if "first" in request.url.path:
+                return httpx.Response(429)
+            return httpx.Response(200, json=candidate([{"text": "готово"}]))
+
+        provider = GeminiProvider(
+            make_settings(gemini_model="first", gemini_fallback_model="second", ai_max_retries=3),
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+
+        await provider.complete(request_for())
+
+        assert len([path for path in asked if "first" in path]) == 1
+
+    async def test_the_last_model_still_gets_its_retries(self) -> None:
+        asked: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            asked.append(request.url.path)
+            if "second" in request.url.path and len(asked) < 3:
+                return httpx.Response(503)
+            if "first" in request.url.path:
+                return httpx.Response(503)
+            return httpx.Response(200, json=candidate([{"text": "готово"}]))
+
+        provider = GeminiProvider(
+            make_settings(
+                gemini_model="first",
+                gemini_fallback_model="second",
+                ai_max_retries=3,
+                ai_retry_base_delay_s=0.11,
+            ),
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+
+        answer = await provider.complete(request_for())
+
+        assert answer.text == "готово"
+        assert len([path for path in asked if "second" in path]) > 1

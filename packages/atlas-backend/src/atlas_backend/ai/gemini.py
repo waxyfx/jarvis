@@ -165,8 +165,15 @@ class GeminiProvider:
         # not an answer to that; asking a different one is.
         models = self._models()
         for model in models:
+            # Only the last model gets the retry budget. Spending it on a model
+            # that is already known to be unavailable, and *then* trying the
+            # other one, pushed a turn past its ninety-second timeout — which
+            # turned a clean "the quota is spent" into a timeout, a worse
+            # message for the same cause.
             try:
-                body = await self._ask(model, payload)
+                body = await self._ask(
+                    model, payload, retries=self._max_retries if model == models[-1] else 0
+                )
             except _UnavailableError as exc:
                 # Only when the model is *unavailable*, never when the request
                 # was wrong: a 400 fails identically everywhere, and retrying it
@@ -184,11 +191,11 @@ class GeminiProvider:
             return (self.model, self._fallback_model)
         return (self.model,)
 
-    async def _ask(self, model: str, payload: dict[str, Any]) -> dict[str, Any]:
-        """One model, with retries. Raises rather than returning a failure."""
+    async def _ask(self, model: str, payload: dict[str, Any], *, retries: int) -> dict[str, Any]:
+        """One model. Raises rather than returning a failure."""
         url = f"{self._base_url}/models/{model}:generateContent"
 
-        for attempt in range(self._max_retries + 1):
+        for attempt in range(retries + 1):
             try:
                 response = await self._post(url, payload)
             except httpx.TimeoutException as exc:
@@ -202,7 +209,7 @@ class GeminiProvider:
             if response.status_code == 200:
                 break
 
-            if response.status_code in _RETRYABLE_STATUS and attempt < self._max_retries:
+            if response.status_code in _RETRYABLE_STATUS and attempt < retries:
                 delay = _retry_delay(response, self._retry_base_delay, attempt)
                 log.warning(
                     "ai_retrying",
