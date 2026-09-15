@@ -1,6 +1,7 @@
 # Parallel development handoff — 2026-09-15
 
-Base: `9fd13f6`, branch `codex/prayer-personality`, worktree
+Initial base: `9fd13f6`; rebased cleanly onto Claude's completed Web Tools at
+`a3d8a80`. Branch `codex/prayer-personality`, worktree
 `C:/Users/serik/atlas-codex-prayer-personality`.
 
 ## Coordination
@@ -77,4 +78,71 @@ calls were made. Test imports were checked to resolve inside this worktree.
 - iPhone device signing, Apple account setup and physical testing remain outside
   this independent scope.
 
-Implementation and final verification notes follow as modules are completed.
+## Delivered
+
+| Component | Commit | Integration notes |
+|---|---|---|
+| Architecture/ownership review | `6efdeff` | This document |
+| Offline prayer timetable | `caefb33` | [PRAYER-SCHEDULE.md](PRAYER-SCHEDULE.md) |
+| Immutable personality presentation | `0d032c5` | [PERSONALITY-IMPLEMENTATION.md](PERSONALITY-IMPLEMENTATION.md) |
+
+Both modules are implemented, tested and importable. Neither is automatically
+activated in the running assistant. Catalogue/API wiring belongs to the
+integrator and is described in the component documents. There are no database
+migrations, new external services or new credentials. The only added runtime
+dependency is `tzdata`; existing locked package versions were retained.
+
+While this branch was in progress, Claude committed Web Tools (`2476dce`) and
+their live model acceptance harness (`a3d8a80`), then started backend `activity/`,
+activity tests, catalogue and dispatcher edits. The rebase incorporated only
+his completed commits, not his uncommitted activity work. No overlapping
+component paths were edited here. Do not copy an entire catalogue or dispatcher
+from this branch over Claude's newer files.
+
+## Final verification after rebase
+
+- Backend and shared suites: **708 passed, 163 skipped**, including Web Tools.
+- New coverage: **41 prayer tests + 95 personality tests**.
+- `ruff check .`: passed.
+- `ruff format --check .`: 215 files clean, including Markdown Python examples.
+- `mypy`: 110 source files, no issues.
+- `uv lock --check`: passed; only `tzdata` added to the lockfile.
+- `detect-secrets scan`: no findings in files changed by this branch.
+- `git diff --check`: passed.
+
+Skipped tests require PostgreSQL; this run intentionally did not use Claude's
+databases, environment files or live model/HTTP credentials. This is not a
+claim of database or real-device acceptance. Both new modules and their tests
+run without a database, model, tracker, microphone or device.
+
+### Reproducing the isolated run on this machine
+
+Run in this worktree. The shared Python executable supplies existing libraries;
+explicit source paths ensure it imports **this checkout**, not Claude's. The
+small timezone package was installed under this worktree's ignored `.tools/`
+directory using `uv pip install --target`; the shared virtualenv was unchanged.
+
+```powershell
+$env:PYTHONPATH = "$PWD/.tools/test-deps;$PWD/packages/atlas-backend/src;$PWD/packages/atlas-shared/src;$PWD/packages/atlas-agent-windows/src;$PWD/packages/atlas-voice/src"
+$env:ATLAS_TEST_DATABASE_URL = ''
+$env:ATLAS_E2E_DATABASE_URL = ''
+& C:/Users/serik/atlas/.venv/Scripts/python.exe -m pytest packages/atlas-shared/tests packages/atlas-backend/tests -m 'not live'
+& C:/Users/serik/atlas/.venv/Scripts/ruff.exe check .
+& C:/Users/serik/atlas/.venv/Scripts/ruff.exe format --check .
+& C:/Users/serik/atlas/.venv/Scripts/python.exe -m mypy
+```
+
+For a fresh environment, use the branch's lockfile and the project's normal
+isolated environment setup. Do not point tests at production or Claude's active
+test databases: those suites truncate their configured test tables.
+
+## Integration order
+
+Review `git diff a3d8a80...codex/prayer-personality` and the three feature/review
+commits above, followed by the final handoff update. Apply them to the integrator's
+chosen branch after checking current ownership again. The modules are independent;
+personality does not depend on prayer or `tzdata`. If integrating prayer, take
+its dependency and lockfile changes together. Keep all `atlas-*` identifiers.
+
+No merge, push, deployment or activation was performed. The current worktree and
+branch are retained for review.
