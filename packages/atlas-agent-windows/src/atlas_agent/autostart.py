@@ -39,6 +39,7 @@ __all__ = [
     "AutostartError",
     "AutostartStatus",
     "agent_command",
+    "everything_command",
     "install",
     "status",
     "uninstall",
@@ -75,6 +76,26 @@ def agent_command() -> str:
     if script.is_file():
         return f'"{script}" run'
     return f'"{sys.executable}" -m atlas_agent.cli run'
+
+
+def everything_command() -> str | None:
+    """The command that brings the whole stack up, if this is a source checkout.
+
+    The agent alone is enough on a machine where the backend runs elsewhere. On
+    the owner's laptop it is not: the backend is what holds the schedule, the
+    tracker token and the proactive loop, and an agent that starts at logon with
+    nothing to connect to is a tray icon that does nothing.
+
+    Returns None when the launcher cannot be found, so the caller can fall back
+    to the agent rather than register a path that does not exist.
+    """
+    launcher = _repository_root() / "start-jarvis.bat"
+    return f'"{launcher}"' if launcher.is_file() else None
+
+
+def _repository_root() -> Path:
+    """Where the checkout lives, from this file's own location."""
+    return Path(__file__).resolve().parents[4]
 
 
 def install(*, command: str | None = None) -> AutostartStatus:

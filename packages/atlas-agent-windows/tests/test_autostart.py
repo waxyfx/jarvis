@@ -162,3 +162,31 @@ def test_a_real_install_does_not_disturb_the_production_entry(
     monkeypatch.undo()
     after = autostart.status()
     assert (before.installed, before.detail) == (after.installed, after.detail)
+
+
+class TestStartingEverything:
+    """The agent alone is not JARVIS on the machine that runs JARVIS.
+
+    On a laptop where the backend lives elsewhere, an agent at logon is exactly
+    right. On the owner's own machine the backend holds the schedule, the
+    tracker token and the proactive loop, so an agent that starts with nothing
+    to connect to is a tray icon that does nothing.
+    """
+
+    def test_it_points_at_the_launcher_that_starts_the_whole_stack(self) -> None:
+        command = autostart.everything_command()
+
+        assert command is not None
+        assert command.strip('"').endswith("start-jarvis.bat")
+
+    def test_the_launcher_it_names_actually_exists(self) -> None:
+        """A registry entry naming a path that is not there fails at logon, in
+        a window nobody is watching."""
+        from pathlib import Path
+
+        command = autostart.everything_command()
+        assert command is not None
+        assert Path(command.strip('"')).is_file()
+
+    def test_the_agent_command_is_still_the_default(self) -> None:
+        assert autostart.agent_command().endswith("run")

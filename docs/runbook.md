@@ -67,11 +67,50 @@ Once one device is trusted, it authorises the rest — the bootstrap token is no
 longer involved. Authenticate as the paired device and call `/v1/pair/start`
 with its bearer token, choosing `"kind": "ios"` for the phone.
 
+## Starting JARVIS
+
+On the machine that runs everything, one thing to double-click:
+
+```bash
+start-jarvis.bat
+```
+
+It brings up the database, applies any pending migrations, starts the backend,
+waits for it to answer `/v1/health/ready`, and only then opens the microphone.
+Each step is checked before the next begins, so a failure says which step.
+
+It is idempotent. A database already running is left alone. A backend already
+listening is **used rather than replaced** — two backends on one database would
+both run the proactive scheduler, and every reminder would arrive twice.
+
+Whatever it started, it stops: Ctrl+C or closing the window takes down the
+backend and the database it brought up, and leaves alone anything that was
+already running.
+
+`jarvis.bat` starts only the agent. Use it when the backend runs somewhere else.
+
+| Symptom | Where to look |
+|---|---|
+| "the database did not start" | `.pgdata\server.log` |
+| "migrations failed" | `.logs\migrate.log` |
+| "the backend stopped on startup" | `.logs\backend.err.log` — usually a missing value in `.env` |
+| "the backend did not become ready" | `.logs\backend.log` |
+
 ## Autostart on Windows
 
 The agent must run **in your interactive session**, not as a service: a Session 0
 service cannot see your desktop, which later phases need for input and screen
 capture.
+
+On the machine that runs the whole stack, register the launcher rather than the
+agent — an agent that starts at logon with no backend to connect to is a tray
+icon that does nothing:
+
+```bash
+uv run atlas-agent autostart install --everything
+```
+
+Where the backend lives elsewhere, the agent alone is right:
 
 ```bash
 uv run atlas-agent autostart install

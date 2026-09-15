@@ -128,11 +128,18 @@ def _safe_mode(settings: AgentSettings, action: str) -> int:
     return 0
 
 
-def _autostart(action: str) -> int:
+def _autostart(action: str, *, everything: bool = False) -> int:
     if action == "install":
-        state = autostart.install()
+        command = None
+        if everything:
+            command = autostart.everything_command()
+            if command is None:
+                print("Could not find start-jarvis.bat; installing the agent alone instead.")
+        state = autostart.install(command=command)
         print(f"Autostart installed: {state.detail}")
         print("Runs at logon, in your session, with limited privileges (no administrator rights).")
+        if command is None and everything is False:
+            print("This starts the agent only. Use --everything for the database and backend too.")
         return 0
     if action == "uninstall":
         autostart.uninstall()
@@ -352,8 +359,17 @@ def main() -> None:
     safe = subcommands.add_parser("safe-mode", help="local kill switch")
     safe.add_argument("action", choices=["on", "off", "status"])
 
-    auto = subcommands.add_parser("autostart", help="start the agent at logon")
+    auto = subcommands.add_parser("autostart", help="start JARVIS at logon")
     auto.add_argument("action", choices=["install", "uninstall", "status"])
+    auto.add_argument(
+        "--everything",
+        action="store_true",
+        help=(
+            "start the database and backend too, not only the agent. Use this on "
+            "the machine that runs JARVIS; leave it off when the backend lives "
+            "elsewhere"
+        ),
+    )
 
     voice = subcommands.add_parser(
         "enroll-voice", help="open the window that registers your voice with JARVIS"
@@ -377,7 +393,7 @@ def main() -> None:
         elif args.command == "safe-mode":
             sys.exit(_safe_mode(settings, args.action))
         elif args.command == "autostart":
-            sys.exit(_autostart(args.action))
+            sys.exit(_autostart(args.action, everything=args.everything))
         else:
             sys.exit(
                 asyncio.run(
