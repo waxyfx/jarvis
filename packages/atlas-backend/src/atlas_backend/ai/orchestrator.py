@@ -47,6 +47,7 @@ from atlas_backend.audit import AuditActor, AuditEvent, append
 from atlas_backend.config import Settings
 from atlas_backend.db.models import Device, ToolCall
 from atlas_backend.logging import get_logger
+from atlas_backend.memory import as_prompt_block, recall
 from atlas_backend.personality.engine import (
     Address,
     Mode,
@@ -276,6 +277,10 @@ class Assistant:
         ]
         remaining_calls = self._settings.ai_max_tool_calls_per_turn
         has_external_content = False
+        # Read once per turn rather than per round trip. Nothing changes it
+        # mid-turn except a memory tool in this same turn, and a fact stored
+        # in sentence one does not need to be in the prompt for sentence two.
+        remembered = as_prompt_block(await recall(session, user_id=target.user_id))
         # Only what this backend can actually run. Offering a tracker tool with
         # no tracker behind it would earn a refusal the model can do nothing
         # about, and teach it to keep trying.
@@ -294,6 +299,7 @@ class Assistant:
                         tools=descriptors,
                         language=language,
                         has_external_content=has_external_content,
+                        remembered=remembered,
                     )
                 )
             except (AITimeoutError, MalformedResponseError, AIProviderError) as exc:

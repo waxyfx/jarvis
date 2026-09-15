@@ -108,6 +108,9 @@ class AIRequest:
     #: uses it to tighten policy, and providers use it to strengthen the warning
     #: in the system instruction.
     has_external_content: bool = False
+    #: Facts the owner asked to be remembered, already rendered. Empty for
+    #: someone who has never said "запомни", which is the common case.
+    remembered: str = ""
     max_output_tokens: int = 1024
     temperature: float = 0.0
 

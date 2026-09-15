@@ -25,6 +25,7 @@ from atlas_backend.config import Settings
 from atlas_backend.db.base import utc_now
 from atlas_backend.db.models import Device, PermissionOverrideRow, ToolCall
 from atlas_backend.logging import get_logger
+from atlas_backend.memory.tools import MEMORY_TOOLS, MemoryToolError, run_memory_tool
 from atlas_backend.policy.engine import (
     OverrideMode,
     PermissionOverride,
@@ -230,6 +231,7 @@ class ToolDispatcher:
             ActivityToolError,
             PrayerToolError,
             ReminderToolError,
+            MemoryToolError,
         ) as exc:
             call.status = CallStatus.COMPLETED
             call.completed_at = utc_now()
@@ -271,15 +273,14 @@ class ToolDispatcher:
         name was in the catalogue before it got here, so this chooses between
         known things rather than parsing one.
         """
-        if call.tool_name in REMINDER_TOOLS:
-            # The only backend family that writes to this database, so it
-            # takes the session the dispatcher is already inside.
+        if call.tool_name in MEMORY_TOOLS or call.tool_name in REMINDER_TOOLS:
+            # The two families that write to this database, so both take the
+            # session the dispatcher is already inside.
             device = await session.get(Device, call.device_id)
             if device is None:
                 raise ReminderToolError("that machine is not registered")
-            return await run_reminder_tool(
-                session, device.user_id, call.device_id, call.tool_name, call.args
-            )
+            runner = run_memory_tool if call.tool_name in MEMORY_TOOLS else run_reminder_tool
+            return await runner(session, device.user_id, call.device_id, call.tool_name, call.args)
 
         if call.tool_name in PRAYER_TOOLS:
             if self._prayer is None:

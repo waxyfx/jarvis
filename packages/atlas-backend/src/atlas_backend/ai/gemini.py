@@ -252,6 +252,7 @@ class GeminiProvider:
                         "text": build_system_instruction(
                             request.language,
                             has_external_content=request.has_external_content,
+                            remembered=request.remembered,
                         )
                     }
                 ]

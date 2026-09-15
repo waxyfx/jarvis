@@ -40,6 +40,7 @@ __all__ = [
     "Conversation",
     "Device",
     "DeviceSession",
+    "Memory",
     "Message",
     "PairingCode",
     "PermissionOverrideRow",
@@ -382,3 +383,38 @@ class Reminder(Base):
     #: worse than one delivered late.
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+class Memory(Base):
+    """Something the owner asked JARVIS to remember about them.
+
+    **Only what they asked for.** There is no code path that writes here from
+    the model's own conclusions about the owner — no inferred preferences, no
+    "I noticed you usually...", no profile built from what they happened to say.
+    Every row exists because someone said "запомни". That restraint is the whole
+    design: a memory the owner did not ask for is a memory they cannot predict,
+    and an assistant whose behaviour changes for reasons its owner cannot name
+    is worse than one that forgets.
+
+    Small on purpose. These are injected into the system instruction on every
+    turn, so the whole table has to stay something a person could read in a
+    minute — see atlas_backend/memory/store.py for the cap and why.
+    """
+
+    __tablename__ = "memories"
+    __table_args__ = (Index("ix_memories_user", "user_id", "forgotten_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+
+    #: One fact, in the owner's own words where possible.
+    text: Mapped[str] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    #: Which device it was said to. Not used for filtering — the owner is one
+    #: person — but a memory with no provenance is one nobody can audit.
+    device_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, default=None)
+
+    #: Soft-deleted rather than removed. "Forget that" should be undoable by a
+    #: person looking at a database, because the alternative is a misheard word
+    #: destroying something the owner deliberately stored.
+    forgotten_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

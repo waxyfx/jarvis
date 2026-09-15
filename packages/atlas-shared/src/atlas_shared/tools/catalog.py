@@ -866,3 +866,92 @@ CATALOG.register(
         rate_limit_per_minute=20,
     )
 )
+
+
+# --------------------------------------------------------------------------
+# memory
+#
+# "Запомни, что..." — a handful of facts the owner asked to be kept, carried
+# into every turn.
+#
+# There is deliberately no tool for the model to decide something is worth
+# remembering on its own. Every row exists because a person asked for it. An
+# assistant that quietly accumulates a profile is one whose behaviour changes
+# for reasons its owner cannot name, and that is worse than one that forgets.
+#
+# Remembering and listing are LOW. Forgetting is too, and soft: the row stays,
+# it simply stops being carried, so a misheard "забудь" costs a conversation
+# rather than the fact itself.
+# --------------------------------------------------------------------------
+
+
+class MemoryRememberArgs(_Args):
+    text: str = Field(
+        min_length=1,
+        max_length=300,
+        description=(
+            "One fact, in the user's own words where possible. Only when they "
+            "asked you to remember it — never something you decided was worth "
+            "keeping."
+        ),
+    )
+
+
+CATALOG.register(
+    ToolManifest(
+        name="memory.remember",
+        version=1,
+        summary="Keep one fact the user asked you to remember.",
+        args_model=MemoryRememberArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=10.0,
+        runs_on="backend",
+        requires_capabilities=("memory",),
+        rate_limit_per_minute=20,
+    )
+)
+
+
+class MemoryListArgs(_Args):
+    """No arguments: everything currently remembered."""
+
+
+CATALOG.register(
+    ToolManifest(
+        name="memory.list",
+        version=1,
+        summary="What the user has asked you to remember.",
+        args_model=MemoryListArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=10.0,
+        runs_on="backend",
+        requires_capabilities=("memory",),
+        rate_limit_per_minute=20,
+    )
+)
+
+
+class MemoryForgetArgs(_Args):
+    memory_id: str = Field(
+        min_length=1,
+        max_length=64,
+        description="An id from memory.list. Never invent one.",
+    )
+
+
+CATALOG.register(
+    ToolManifest(
+        name="memory.forget",
+        version=1,
+        summary="Stop carrying one remembered fact.",
+        args_model=MemoryForgetArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=10.0,
+        runs_on="backend",
+        requires_capabilities=("memory",),
+        rate_limit_per_minute=20,
+    )
+)
