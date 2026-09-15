@@ -88,10 +88,7 @@ class TestTheImageCanContainIt:
 def _declared_dependencies() -> set[str]:
     with (BACKEND / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
-    return {
-        _normalise(requirement)
-        for requirement in project.get("dependencies", [])
-    }
+    return {_normalise(requirement) for requirement in project.get("dependencies", [])}
 
 
 def _normalise(requirement: str) -> str:
@@ -118,14 +115,110 @@ def _distribution_for(module: str) -> str:
 #: of it. Anything genuinely missing here shows up as a false failure naming the
 #: module, which is a two-second fix rather than a mystery.
 _STANDARD_LIBRARY = {
-    "__future__", "abc", "argparse", "ast", "asyncio", "base64", "collections",
-    "contextlib", "contextvars", "copy", "csv", "dataclasses", "datetime",
-    "decimal", "enum", "functools", "hashlib", "hmac", "html", "importlib",
-    "inspect", "io", "ipaddress", "itertools", "json", "logging", "math",
-    "os", "pathlib", "platform", "random", "re", "secrets", "signal", "socket",
-    "string", "sys", "textwrap", "threading", "time", "tomllib", "traceback",
-    "types", "typing", "unicodedata", "urllib", "uuid", "warnings", "zoneinfo",
+    "__future__",
+    "abc",
+    "argparse",
+    "ast",
+    "asyncio",
+    "base64",
+    "collections",
+    "contextlib",
+    "contextvars",
+    "copy",
+    "csv",
+    "dataclasses",
+    "datetime",
+    "decimal",
+    "enum",
+    "functools",
+    "hashlib",
+    "hmac",
+    "html",
+    "importlib",
+    "inspect",
+    "io",
+    "ipaddress",
+    "itertools",
+    "json",
+    "logging",
+    "math",
+    "os",
+    "pathlib",
+    "platform",
+    "random",
+    "re",
+    "secrets",
+    "signal",
+    "socket",
+    "string",
+    "sys",
+    "textwrap",
+    "threading",
+    "time",
+    "tomllib",
+    "traceback",
+    "types",
+    "typing",
+    "unicodedata",
+    "urllib",
+    "uuid",
+    "warnings",
+    "zoneinfo",
 }
+
+
+class TestTheImageRecipe:
+    """The Dockerfile names paths. Paths move.
+
+    Nothing here builds an image — there is no Docker on the development
+    machine, which is stated in the runbook rather than worked around. What it
+    does check is the failure that would otherwise be discovered on a server:
+    a COPY naming a path this repository no longer has.
+    """
+
+    def test_every_path_the_dockerfile_copies_exists(self) -> None:
+        repository = BACKEND.parents[1]
+        missing: list[str] = []
+
+        for line in _dockerfile_lines():
+            if not line.upper().startswith("COPY "):
+                continue
+            parts = line.split()[1:]
+            # `COPY --from=... /in/the/other/image /here` refers to a path that
+            # only exists during the build, so only the plain form is checkable.
+            if any(part.startswith("--from=") for part in parts):
+                continue
+            sources = [part for part in parts if not part.startswith("--")][:-1]
+            missing += [source for source in sources if not (repository / source).exists()]
+
+        assert not missing, f"the Dockerfile copies paths that do not exist: {missing}"
+
+    def test_it_installs_the_backend_and_nothing_heavier(self) -> None:
+        """`--package atlas-shared --package atlas-backend` is what keeps torch,
+        sherpa and sounddevice out of a container that has no sound card."""
+        recipe = "\n".join(_dockerfile_lines())
+
+        assert "--package atlas-backend" in recipe
+        assert "atlas-agent-windows" not in recipe.split("COPY packages/atlas-backend")[-1]
+
+    def test_migrations_are_not_run_on_container_start(self) -> None:
+        """An automatic migration on boot turns a rollback into a data-loss
+        event, so the entrypoint must not carry one."""
+        start = [
+            line for line in _dockerfile_lines() if line.upper().startswith(("CMD", "ENTRYPOINT"))
+        ]
+
+        assert start, "the image has no command"
+        assert not any("alembic" in line for line in start)
+
+
+def _dockerfile_lines() -> list[str]:
+    text = (BACKEND.parents[1] / "infra" / "backend.Dockerfile").read_text(encoding="utf-8")
+    # Join continuations first, so a COPY split over two lines is still one.
+    joined = text.replace("\\\n", " ")
+    return [
+        line.strip() for line in joined.splitlines() if line.strip() and not line.startswith("#")
+    ]
 
 
 class TestTheDeclarationItself:
