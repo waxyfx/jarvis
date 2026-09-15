@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from atlas_backend.activity.store import samples_between, start_of_day
 from atlas_backend.activity.summary import summarise
-from atlas_backend.db.models import ActivitySampleRow
+from atlas_backend.db.models import ActivitySampleRow, Reminder
 from atlas_backend.db.session import Database
 from atlas_backend.logging import get_logger
 from atlas_backend.reports.daily import DayReport, NoteSink, build_report
@@ -108,6 +108,7 @@ class DailyReportWriter:
                 if device_id is not None
                 else []
             )
+            waiting = await _reminders_waiting(session, now=now)
 
         return build_report(
             on=now,
@@ -115,6 +116,7 @@ class DailyReportWriter:
             habits=habits,
             activity=summarise(samples, now=now),
             watched=bool(samples),
+            reminders_waiting=waiting,
         )
 
 
@@ -128,6 +130,21 @@ def _notes_of(tracker: TrackerProvider | None) -> NoteSink | None:
     if tracker is not None and hasattr(tracker, "add_note"):
         return tracker
     return None
+
+
+async def _reminders_waiting(session: AsyncSession, *, now: datetime) -> list[str]:
+    """Reminders set but not yet said. The one thing in the report still live."""
+    rows = await session.execute(
+        select(Reminder.text)
+        .where(
+            Reminder.due_at > now,
+            Reminder.delivered_at.is_(None),
+            Reminder.cancelled_at.is_(None),
+        )
+        .order_by(Reminder.due_at)
+        .limit(10)
+    )
+    return [text for (text,) in rows.all()]
 
 
 async def _busiest_device(session: AsyncSession, *, since: datetime) -> uuid.UUID | None:

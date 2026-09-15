@@ -233,6 +233,14 @@ def _morning_briefing(moment: Moment, schedule: Schedule) -> list[Planned]:
     else:
         body = f"Сегодня у вас {_count(len(outstanding))}, без привязки ко времени."
 
+    # One more sentence, and only when there is a prayer still ahead. The
+    # briefing is the one thing said aloud in the morning, so anything that
+    # belongs in a morning belongs here rather than in a second interruption.
+    upcoming = moment.prayers.next_after(moment.now) if moment.prayers else None
+    if upcoming is not None:
+        prayer, at = upcoming
+        body += f" {prayer.russian} в {at.strftime('%H:%M')}."
+
     return [
         Planned(
             key=f"briefing:{moment.now.date().isoformat()}",

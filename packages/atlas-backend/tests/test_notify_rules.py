@@ -265,3 +265,50 @@ class TestOrdering:
         planned = decide(moment(now=morning, tasks=[task("Созвон", at=soon)]))
 
         assert kinds(planned) == [NotificationKind.REMINDER, NotificationKind.BRIEFING]
+
+
+class TestTheBriefingMentionsThePrayer:
+    """The briefing is the one thing said aloud in the morning.
+
+    Anything that belongs in a morning belongs in it, rather than arriving as a
+    second interruption ten minutes later.
+    """
+
+    def moment_at(self, hour: int, **kwargs: object) -> Moment:
+        from zoneinfo import ZoneInfo
+
+        from atlas_backend.prayer.times import compute
+
+        now = AFTERNOON.replace(hour=hour, minute=0)
+        kwargs.setdefault("present", True)
+        return Moment(
+            now=now,
+            prayers=compute(
+                now.date(), latitude=43.238, longitude=76.889, zone=ZoneInfo("Asia/Almaty")
+            ),
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+    def test_the_next_prayer_is_named(self) -> None:
+        """Nine in this file is nine UTC, which is two in the afternoon in
+        Almaty — so the next prayer is Asr. The point is that one is named at
+        all; which one is decided by the clock and pinned here so a change in
+        the prayer engine cannot pass silently."""
+        planned = decide_all(self.moment_at(9), SCHEDULE, already_said=set())
+
+        briefing = next(
+            item for item in planned if item.notification.kind is NotificationKind.BRIEFING
+        )
+        assert "Аср в 15:18" in briefing.notification.body
+
+    def test_without_a_location_the_briefing_is_unchanged(self) -> None:
+        """The common case until the owner gives coordinates. No trailing
+        sentence, no empty one."""
+        planned = decide_all(
+            Moment(now=AFTERNOON.replace(hour=9), present=True), SCHEDULE, already_said=set()
+        )
+
+        briefing = next(
+            item for item in planned if item.notification.kind is NotificationKind.BRIEFING
+        )
+        assert briefing.notification.body.endswith("сэр.")

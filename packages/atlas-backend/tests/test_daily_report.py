@@ -291,3 +291,16 @@ async def _record(device_id: uuid.UUID, *, minutes: float, until: datetime) -> N
             for index in range(int(minutes * 6) + 1)
         ],
     )
+
+
+class TestRemindersStillWaiting:
+    """The one thing in the report the owner might still act on tonight."""
+
+    def test_they_are_named(self) -> None:
+        body = report(reminders_waiting=["позвонить маме", "выключить плиту"]).as_body()
+
+        assert "Напоминания, которые ещё не прозвучали: 2." in body
+        assert "позвонить маме" in body
+
+    def test_none_waiting_leaves_the_section_out(self) -> None:
+        assert "Напоминания" not in report().as_body()

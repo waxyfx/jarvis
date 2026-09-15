@@ -83,6 +83,10 @@ class DayReport:
     left: Sequence[Task] = ()
     habits: Sequence[Habit] = ()
     activity: ActivityDigest = field(default_factory=ActivityDigest)
+    #: Reminders set today that have not gone off yet. Worth a line: a reminder
+    #: the owner set this morning and has not heard is the one thing in this
+    #: report they might still act on tonight.
+    reminders_waiting: Sequence[str] = ()
     #: False when no samples exist for the day at all: the agent was off, or
     #: the machine was. Reported as unknown rather than as zero.
     watched: bool = True
@@ -105,7 +109,14 @@ class DayReport:
         if self.habits:
             sections.append(self._habits())
         sections.append(self._computer())
+        if self.reminders_waiting:
+            sections.append(self._reminders())
         return [section for section in sections if section]
+
+    def _reminders(self) -> str:
+        lines = [f"Напоминания, которые ещё не прозвучали: {len(self.reminders_waiting)}."]
+        lines += [f"  — {text}" for text in self.reminders_waiting[:_APPS_NAMED]]
+        return "\n".join(lines)
 
     def _tasks(self) -> str:
         total = len(self.done) + len(self.left)
@@ -153,6 +164,7 @@ def build_report(
     habits: Sequence[Habit],
     activity: ActivityDigest,
     watched: bool,
+    reminders_waiting: Sequence[str] = (),
 ) -> DayReport:
     """Assemble the day. Pure: everything it needs is already gathered."""
     return DayReport(
@@ -162,4 +174,5 @@ def build_report(
         habits=habits,
         activity=activity,
         watched=watched,
+        reminders_waiting=reminders_waiting,
     )
