@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from atlas_backend.activity.tools import ACTIVITY_TOOLS, ActivityToolError, run_activity_tool
 from atlas_backend.audit import AuditActor, AuditEvent, append
 from atlas_backend.config import Settings
 from atlas_backend.db.base import utc_now
@@ -204,15 +205,15 @@ class ToolDispatcher:
 
         started = time.monotonic()
         try:
-            result = await self._run_backend_tool(call)
-        except (TrackerError, WebToolError) as exc:
+            result = await self._run_backend_tool(session, call)
+        except (TrackerError, WebToolError, ActivityToolError) as exc:
             call.status = CallStatus.COMPLETED
             call.completed_at = utc_now()
             call.duration_ms = int((time.monotonic() - started) * 1000)
             # Reported rather than raised: the assistant should say it could not
             # be done, in the same breath as everything else that turn.
-            code = "web_error" if call.tool_name in WEB_TOOLS else "tracker_error"
-            call.error = {"code": code, "message": str(exc)}
+            family = call.tool_name.split(".", 1)[0]
+            call.error = {"code": f"{family}_error", "message": str(exc)}
             await self._audit(session, call, AuditEvent.TOOL_FAILED, {"reason": str(exc)})
             await session.commit()
             return DispatchOutcome(call=call, result=None)
@@ -236,14 +237,19 @@ class ToolDispatcher:
             ),
         )
 
-    async def _run_backend_tool(self, call: ToolCall) -> dict[str, Any]:
+    async def _run_backend_tool(self, session: AsyncSession, call: ToolCall) -> dict[str, Any]:
         """Pick the family that owns this tool and run it.
 
-        A table rather than a chain of prefixes would be tidier with three
-        families; with two it would be indirection for its own sake. What
-        matters is that the name was in the catalogue before it got here, so
-        this is choosing between known things, not parsing one.
+        Written out rather than dispatched through a table because each family
+        needs different context — the web tools need their own state, the
+        activity tools need the session and the device, the tracker needs
+        neither — and a table would have to pass all of it to all of them. The
+        name was in the catalogue before it got here, so this chooses between
+        known things rather than parsing one.
         """
+        if call.tool_name in ACTIVITY_TOOLS:
+            return await run_activity_tool(session, call.device_id, call.tool_name, call.args)
+
         if call.tool_name in WEB_TOOLS:
             if self._web is None:
                 raise WebToolError("web access is switched off")

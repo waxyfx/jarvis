@@ -685,3 +685,46 @@ CATALOG.register(
         rate_limit_per_minute=15,
     )
 )
+
+
+# --------------------------------------------------------------------------
+# activity
+#
+# "Сколько я сегодня работал?" — answered from the samples the agent has been
+# reporting all day, which live in the backend's database. Backend-side for
+# that reason: the laptop does not remember its own day.
+#
+# LOW, and reading only. The privacy work is upstream of here — the agent
+# collects the foreground process name and an idle flag, and the schema has no
+# column for a window title, a keystroke or a clipboard — so there is nothing
+# in this data that needs a confirmation to read back to the person it is about.
+# --------------------------------------------------------------------------
+
+
+class ActivityTodayArgs(_Args):
+    hours: int | None = Field(
+        default=None,
+        ge=1,
+        le=24,
+        description=(
+            "Leave unset for today, counted from midnight — that is what "
+            "'how long have I worked today' means. Set it only when the user "
+            "asked about a rolling window, like 'the last three hours'."
+        ),
+    )
+
+
+CATALOG.register(
+    ToolManifest(
+        name="activity.today",
+        version=1,
+        summary="How long the owner has worked today, and in which applications.",
+        args_model=ActivityTodayArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=15.0,
+        runs_on="backend",
+        requires_capabilities=("activity",),
+        rate_limit_per_minute=20,
+    )
+)
