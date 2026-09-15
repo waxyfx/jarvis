@@ -211,8 +211,22 @@ class VoiceRuntime:
     session: VoiceSession
     microphone: Microphone
     loudspeaker: Loudspeaker
+    tts: PiperTTS
     models: VoiceModels
     events: list[SessionEvent] = field(default_factory=list)
+
+    async def announce(self, text: str, language: Language) -> None:
+        """Say something the owner did not ask for.
+
+        Deliberately not routed through the session: a notification is not a
+        turn. It has no wake word before it and no answer expected after it, and
+        pushing it through the conversation machinery would leave the session
+        waiting for a reply to a sentence nobody addressed to it.
+
+        The loudspeaker serialises, so this queues behind an answer in progress
+        rather than talking over it.
+        """
+        await self.loudspeaker.play(await self.tts.synthesise(text, language=language))
 
     async def run(self, *, stop: asyncio.Event | None = None) -> None:
         """Pump frames until told to stop. The whole runtime, one loop.
@@ -303,5 +317,6 @@ async def build_runtime(
         session=session,
         microphone=Microphone(device=input_device),
         loudspeaker=loudspeaker,
+        tts=tts,
         models=models,
     )

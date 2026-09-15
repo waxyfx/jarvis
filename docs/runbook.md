@@ -278,6 +278,37 @@ turn down.
 | "the tracker answered with something that is not JSON" | A Vercel error page | Usually a deployment that is failing to build |
 | Tracker tools offered but every call is refused | A MEDIUM action awaiting confirmation | Completing, moving and re-prioritising are held by the Policy Engine by design |
 
+## When JARVIS speaks first
+
+Reminders, the morning briefing, the evening summary and the long-session nudge
+are on by default and need nothing configured. Everything about them is a
+setting, and the defaults are the ones described in
+[M5-REPORT.md](M5-REPORT.md).
+
+| Setting | Default | What it does |
+|---|---|---|
+| `ATLAS_PROACTIVE_ENABLED` | `true` | The whole feature. `false` and nothing is ever said unprompted |
+| `ATLAS_PROACTIVE_INTERVAL_S` | `60` | How often the rules get a chance to fire |
+| `ATLAS_OWNER_TIMEZONE` | `Asia/Almaty` | **Load-bearing.** Everything is decided in local time |
+| `ATLAS_BRIEFING_HOUR` / `_UNTIL_HOUR` | `8` / `12` | The window the morning briefing may land in |
+| `ATLAS_EVENING_SUMMARY_HOUR` / `_UNTIL_HOUR` | `21` / `23` | The same, for the evening |
+| `ATLAS_LONG_SESSION_MINUTES` | `90` | Unbroken time at the desk before it says something |
+| `ATLAS_QUIET_FROM_HOUR` / `ATLAS_QUIET_UNTIL_HOUR` | `23` / `7` | Outside these hours, shown but not spoken |
+
+Things that are working correctly and can look like faults:
+
+| What you see | Why |
+|---|---|
+| No morning briefing today | You were not at the machine between 08:00 and 12:00. A briefing at four in the afternoon is not a briefing |
+| A reminder appeared but was not spoken | Quiet hours, or SAFE MODE. Both silence the voice and keep the text |
+| Nothing at all while the laptop is on | Presence is "the last activity sample is recent and not idle". Nothing is said to an empty chair |
+| A briefing repeated after a restart | Known. What has been said is kept in memory only |
+| Reminders stop after a backend restart | They should not — check the log for `scheduler_started` |
+
+The one setting that can actually break it is the timezone. An unknown name
+falls back to UTC and logs `unknown_timezone`; if the briefing arrives in the
+middle of the night, that log line is the first thing to look for.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -290,6 +321,9 @@ turn down.
 | Pairing returns 401 | Wrong, expired or already-used code | Issue a new one. The response is deliberately identical for all three |
 | `/v1/health/ready` fails | Database unreachable | `docker compose ps`, then `docker compose logs postgres` |
 | Audit verify returns `ok: false` | The log was modified outside the append path | Treat as an incident: preserve the database, check `first_bad_seq` |
+| Agent enters SAFE MODE by itself, log says `agent_command_signature_invalid` | Something sent a frame claiming to be the backend | Treat as an incident. The server signing key and the agent's pin disagree, or someone is on the wire |
+| "найди в интернете" answers from memory | Web tools switched off, or the model chose not to search | Check `ATLAS_WEB_TOOLS_ENABLED`; the tools are removed from the model's list when off |
+| Every search returns nothing found | DuckDuckGo Lite changed, or is challenging the request | `web.search` distinguishes "no results" from a refusal — a refusal reports the status code |
 
 ## Local development
 

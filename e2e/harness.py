@@ -20,6 +20,7 @@ import uvicorn
 from atlas_agent.backend import BackendClient
 from atlas_agent.config import AgentSettings
 from atlas_agent.identity import IdentityStore
+from atlas_agent.notifications import NotificationDelivery
 from atlas_agent.runner import ToolRunner
 from atlas_agent.safety.mode import SafeModeController
 from atlas_agent.safety.paths import PathGuard
@@ -66,6 +67,12 @@ class RunningStack:
     task: asyncio.Task[None]
     server: uvicorn.Server
     thread: threading.Thread
+    #: The FastAPI app, so a test can reach what the backend built — the hub,
+    #: the notifier — to send traffic the HTTP API does not expose.
+    app: Any = None
+    #: What the agent does with a notification. A test inspects this to see
+    #: what actually arrived at the far end of the signed channel.
+    delivery: Any = None
 
     async def shutdown(self) -> None:
         self.stop.set()
@@ -130,6 +137,7 @@ async def start_stack(
 
     allowed = workspace / "allowed"
     controller = SafeModeController(agent_settings.mode_state_path)
+    delivery = NotificationDelivery(safe_mode=controller)
     transport = AgentTransport(
         agent_settings,
         identity,
@@ -141,6 +149,7 @@ async def start_stack(
             ),
         ),
         safe_mode=controller,
+        notifications=delivery,
     )
 
     stop = asyncio.Event()
@@ -160,4 +169,6 @@ async def start_stack(
         task=task,
         server=server,
         thread=thread,
+        app=app,
+        delivery=delivery,
     )

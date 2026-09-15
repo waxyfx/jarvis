@@ -162,6 +162,18 @@ class TrayApplication:
         if self._icon is not None:
             self._icon.stop()
 
+    def notify(self, title: str, body: str) -> None:
+        """Show a balloon from the tray icon.
+
+        Raises when there is no icon, which is the right shape for the caller:
+        the delivery code treats a failure to show as one half of the job not
+        happening, and falls back to speaking. Silently swallowing it here would
+        report success for a notification nobody could see.
+        """
+        if self._icon is None:
+            raise RuntimeError("the tray icon is not running")
+        self._icon.notify(body, title)
+
     def refresh(self) -> None:
         """Redraw after a state change made elsewhere (hotkey, CLI, backend)."""
         if self._icon is None:

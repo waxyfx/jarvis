@@ -56,6 +56,21 @@ class NotificationDelivery:
         self._language = language
         self._delivered: OrderedDict[str, None] = OrderedDict()
 
+    def bind_display(self, show: Callable[[str, str], None]) -> None:
+        """Give it somewhere to show things, once the tray icon is running."""
+        self._show = show
+
+    def bind_voice(self, speak: Callable[[str, Language], Awaitable[None]]) -> None:
+        """Give it a voice once one exists.
+
+        The transport is built before the voice models are loaded — loading them
+        takes long enough that doing it first would leave the agent offline for
+        a minute — so this object starts mute and is handed the speakers when
+        they are ready. A notification that arrives in between is shown, which
+        is the correct behaviour rather than a gap.
+        """
+        self._speak = speak
+
     async def deliver(self, notification: Notify) -> bool:
         """Deliver one. Returns whether anything reached the owner at all."""
         if self._already_delivered(notification.notification_id):

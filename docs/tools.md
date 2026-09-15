@@ -39,6 +39,39 @@ independently and refuses if its answer is higher than the server's.
 rules can be written and tested before anything can act on them; deletion will
 arrive with its own review.
 
+## Tools that run on the backend
+
+Everything above runs on the Windows agent, as a signed command. The tools below
+do not: they are marked `runs_on="backend"` in the manifest, and the dispatcher
+runs them in process. **A backend tool never becomes a signed command**, so
+there is nothing to replay against the machine — and everything before that
+point (risk, confirmation, the audit trail) happens exactly as it does for an
+agent tool.
+
+They live there for one reason each. The tracker is on the internet and should
+be answerable with the laptop shut. The web is not something to fetch from
+inside the owner's own network. The activity history is stored here, not on the
+machine it describes.
+
+| Tool | Base | Executor | What it does |
+|---|---|---|---|
+| `tracker.today` / `.upcoming` / `.schedule` | LOW | ✅ | What is on the owner's plate, as a spoken digest |
+| `tracker.goals` / `.habits` | LOW | ✅ | Goals with progress; habits outstanding today |
+| `tracker.add_task` / `.add_goal` | LOW | ✅ | Adds something. Additive and trivially undone |
+| `tracker.complete_task` / `.reschedule_task` / `.set_priority` | MEDIUM | ✅ | Changes what the owner tracks *by*. Held for confirmation |
+| `web.search` | LOW | ✅ | Five results with their sources |
+| `web.read` | LOW | ✅ | Opens **one of those results** and returns its prose |
+| `activity.today` | LOW | ✅ | How long the owner worked, and in which applications |
+
+There is deliberately no `tracker.delete_task`. Sunny has one; this does not,
+for the same reason `fs.delete` stays out of reach — a misheard delete is not
+recoverable by apologising.
+
+`web.read` is the only tool in the catalogue where the *model* supplies an
+address, and it carries two restrictions that no other tool needs: it opens only
+an address a recent `web.search` returned, and only one that resolves to a
+public host. See `atlas_backend/web/reader.py` for what that refuses and why.
+
 ## Details
 
 ### `system.metrics`

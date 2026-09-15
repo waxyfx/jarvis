@@ -25,6 +25,7 @@ from atlas_agent.config import AgentSettings, _state_dir, get_agent_settings
 from atlas_agent.identity import IdentityStore, IdentityStoreError
 from atlas_agent.logging import configure_logging, get_logger
 from atlas_agent.monitor import ActivityMonitor
+from atlas_agent.notifications import NotificationDelivery
 from atlas_agent.runner import ToolRunner
 from atlas_agent.safety.mode import ModeChangeSource, SafeModeController
 from atlas_agent.safety.paths import PathGuard
@@ -183,8 +184,17 @@ async def _run(
         on_activity=report_activity,
     )
     monitor = ActivityMonitor(settings)
+    # Built before the transport and before the voice models, which take a
+    # minute to load: the agent should be reachable in the meantime, and a
+    # notification arriving before the speakers exist is shown rather than lost.
+    delivery = NotificationDelivery(safe_mode=controller)
     transport = AgentTransport(
-        settings, identity, runner=runner, safe_mode=controller, monitor=monitor
+        settings,
+        identity,
+        runner=runner,
+        safe_mode=controller,
+        monitor=monitor,
+        notifications=delivery,
     )
 
     stop = asyncio.Event()
@@ -224,6 +234,7 @@ async def _run(
     if with_tray and settings.enable_tray and tray.available():
         tray_thread = threading.Thread(target=tray.run, name="atlas-tray", daemon=True)
         tray_thread.start()
+        delivery.bind_display(tray.notify)
 
     voice_task: asyncio.Task[None] | None = None
     if with_voice:
@@ -255,6 +266,7 @@ async def _run(
             runtime.session.note_executing() if running else runtime.session.note_executed()
         )
         runtime.session.states.observe(lambda transition: print(f"  [{transition.current.value}]"))
+        delivery.bind_voice(runtime.announce)
         voice_task = asyncio.create_task(runtime.run(stop=stop))
         print('Listening. Say "Jarvis".')
 
