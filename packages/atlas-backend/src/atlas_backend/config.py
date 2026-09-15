@@ -192,6 +192,20 @@ class Settings(BaseSettings):
     #: How long before each prayer to say something. Zero switches the
     #: reminders off while leaving the question answerable.
     prayer_reminder_minutes: int = Field(default=10, ge=0, le=60)
+
+    # --------------------------------------------------- personality (M5)
+    #: How replies are worded, once everything about *what* they say has been
+    #: decided. The layer can add at most a short preface and can never change a
+    #: fact, reach a tool, or touch a policy decision - see
+    #: atlas_backend/personality/engine.py.
+    #:
+    #: On by default in "jarvis" mode, which is the assistant the owner asked
+    #: for. "professional" switches the decoration off entirely.
+    personality_enabled: bool = True
+    #: professional | jarvis | personal | custom
+    personality_mode: str = "jarvis"
+    #: auto | none | sir
+    personality_address: str = "auto"
     ai_request_timeout_s: float = Field(default=30.0, gt=1.0, le=300.0)
     #: Retries for transient upstream failures (429, 5xx). A rate limit is a
     #: "wait a moment", not a "cannot do that" — telling the user the model is

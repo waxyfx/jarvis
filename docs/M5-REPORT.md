@@ -2,7 +2,7 @@
 
 What was built, what it does, and what is still wrong with it.
 
-Three features, delivered in the order they were asked for. Where a number
+Seven features, delivered in the order they were asked for. Where a number
 appears here it was measured on this machine; where something was not measured,
 it says so.
 
@@ -22,6 +22,18 @@ answered from the activity samples the agent has been sending every ten seconds
 **JARVIS speaks first.** A reminder fifteen minutes before something timed, a
 briefing in the morning, a summary in the evening, and a word after ninety
 unbroken minutes at the desk. Nothing is said to an empty chair.
+
+**JARVIS writes the day down.** Which tasks were finished, which were not, where
+the hours went — filed as a note in Sunny, where the owner already keeps things.
+
+**JARVIS knows when the prayers are.** Computed here from the date and a pair of
+coordinates, with a reminder before each one. Nothing leaves the machine.
+
+**JARVIS sounds like itself.** A small deterministic layer adds an address at the
+end of a reply, sometimes, and can never change a fact.
+
+**And all of it starts with one double-click.** `start-jarvis.bat` brings up the
+database, the backend and the agent in order, checking each before the next.
 
 ---
 
@@ -159,7 +171,98 @@ decisions, not transcripts.
 
 ---
 
-## 5. Bugs found and fixed
+## 5. The day, written down
+
+`activity.today` answers the question out loud; this is the detail behind it,
+filed as a note in Sunny at 22:00 — tagged `jarvis` and `итоги-дня` so it can be
+found and filtered out. The machine token already reaches every Sunny route, so
+nothing on that side needed changing, and `add_note` is deliberately **not** in
+the tool catalogue: the model has no reason to write prose into the owner's
+notes, and giving it one would be a way to persist whatever a web page talked it
+into.
+
+It shares the proactive loop but not its rules. A notification needs someone in
+the room; a report does not.
+
+Verified live: one real report filed in Sunny, note `cmu2iq8tb0021kz0482tc427j`.
+
+---
+
+## 6. Prayer times
+
+Computed here, never fetched. A free API would carry the owner's coordinates and
+the fact that they pray to a third party, daily, for a page of trigonometry — and
+this works with the internet down.
+
+`prayer.today` leads with the next prayer, because that is the question. A
+reminder arrives a configurable few minutes before each one, through the same
+rules as everything else, so quiet hours, SAFE MODE and presence all apply.
+
+Method and school are settings. Sunrise and sunset are astronomy and have one
+right answer; Fajr and Isha depend on which authority you follow, and the
+methods disagree by twenty minutes or more at this latitude. The runbook says to
+check one day against the owner's own mosque.
+
+Where there is no answer there is no answer: far enough north the sun never
+reaches the twilight angle on a summer night, and those prayers come back absent
+rather than invented.
+
+There are now **two** ways to know a prayer time, and they answer different
+worries — see §8.
+
+---
+
+## 7. Character
+
+A deterministic layer runs at the very end of a turn, after the audit entry. It
+can add at most a short address and can never change a fact, reach a tool, or
+touch a policy decision.
+
+The rule it enforces is blunt on purpose: **any turn that involved a tool goes
+out verbatim.** Not "tools that succeeded" — any tool at all. At that layer
+there is no reliable way to tell an attempt from a success, and an answer the
+owner is about to act on is not somewhere to experiment with wording.
+
+It does not say "сэр" every turn either. Said every time it stops being
+character and becomes a tic.
+
+---
+
+## 8. Work integrated from the second agent
+
+A second coding agent worked in a separate worktree on `codex/prayer-personality`
+and left `docs/CODEX-PARALLEL-HANDOFF.md`. Its findings were checked rather than
+assumed; two of them — that `available_tools()` removed every backend tool when
+no tracker was configured, and that Windows has no IANA timezone database — had
+been found independently on this side, which is corroboration rather than
+coincidence.
+
+**The personality engine was taken as written and wired in.** It is careful
+work: no I/O, no model call, history of enum ids only, and tool-bearing turns
+passed through untouched.
+
+**Both prayer implementations were kept**, because they answer different
+worries. Computation needs only coordinates and works for any date, but its
+angles are an approximation of somebody's convention. A supplied timetable
+guesses nothing and is exactly what the owner's mosque publishes, but is bounded
+to the days in the file. Where both exist the timetable should win.
+
+Two things were changed during integration, and both are worth stating plainly
+because they were the other agent's decisions:
+
+The five-prayer enum in `schedule.py` was replaced by the shared six-member one
+(which includes sunrise) plus an explicit `OBLIGATORY` tuple. One package had
+grown two vocabularies for the same five names, and two would eventually
+disagree.
+
+The address moved from the front of the reply to the end. "Сэр, Свободно 42 ГБ."
+is wrong Russian — a capital after a comma — and the next word may be "VS Code",
+so there is no safe way to lowercase it. Every proactive notification in this
+system already ends "..., сэр".
+
+---
+
+## 9. Bugs found and fixed
 
 Each of these was found by a test before it could be found by the owner.
 
@@ -187,9 +290,30 @@ have had no internet either. Found while adding the web tools.
 setting the same thing independently. `speak` is now derived from the effective
 priority.
 
+**Asr landed two and a half hours after sunset.** The shadow rule gives the
+sun's altitude *above* the horizon; the hour-angle function is written in terms
+of depth *below* it. With the sign wrong, Asr came out at 20:33 and the Hanafi
+time fell an hour *earlier* than the standard one. Every individual number still
+looked like a time.
+
+**Every prayer time was computed for the wrong date.** The sun's mean longitude
+was not reduced to a single turn, so the equation of time came out six hundred
+hours wrong. The error was very nearly a whole number of days, so the times of
+day were all still correct and only the date was wrong — by twenty-five days —
+which a timetable printed as HH:MM shows not at all. Caught by a test comparing
+absolute datetimes.
+
+**The startup script died while succeeding.** Windows PowerShell 5.1 turns a
+native program's redirected stderr into terminating errors under
+`$ErrorActionPreference = "Stop"`, so alembic logging its progress killed the
+launcher. Native calls now go through one wrapper that checks the exit code
+instead. A second draft was lost to the same file being read as ANSI because it
+had no byte-order mark: one em dash in a comment broke string parsing eleven
+lines later.
+
 ---
 
-## 6. What is still wrong with it
+## 10. What is still wrong with it
 
 **What has been said is kept in memory only.** A backend restart can repeat a
 briefing. The alternative — a table, a migration and a write on every tick —
@@ -210,12 +334,27 @@ challenging POSTs too, search stops working and says so. A second provider is a
 `SearchProvider` protocol away but was not built, because one working provider
 beats two half-tested ones.
 
+**Everything proactive needs the backend running.** It runs on this laptop, so
+a reminder for 15:00 does not arrive if the machine was off at 14:45, and the
+evening report is not written if it was off at 22:00. That is the honest cost of
+not having a VPS, and it is the single change that would most improve the
+proactive half.
+
+**Prayer times need a location before they do anything.** Both coordinates are
+required and neither is guessed: a timezone narrows a city down to a few hundred
+kilometres, which moves Maghrib by twenty minutes. `USER_ACTION_REQUIRED`.
+
+**The two prayer implementations are not yet joined.** The computation is wired
+to the tool and the reminders; the supplied-timetable path is validated and
+tested but nothing reads a timetable file yet. When it does, the timetable
+should win.
+
 **Nothing here has been heard out loud by the owner yet.** The delivery path is
 tested end-to-end with the speakers stood in for. `USER_ACCEPTANCE_PENDING`.
 
 ---
 
-## 7. Tests
+## 11. Tests
 
 | Area | Tests |
 | --- | --- |
@@ -229,6 +368,12 @@ tested end-to-end with the speakers stood in for. `USER_ACCEPTANCE_PENDING`.
 | Notification delivery (agent) | 13 |
 | Scheduler | 13 |
 | Proactive end-to-end, signed | 4 |
+| Daily report | 20 |
+| Prayer times, from first principles | 31 |
+| Prayer tool and reminders | 20 |
+| Prayer timetables (second agent) | 24 |
+| Personality (second agent) | 95 |
+| Personality wired into a turn | 8 |
 
 Plus five live Gemini cases, which cost quota and are run deliberately.
 

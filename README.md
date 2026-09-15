@@ -3,9 +3,27 @@
 A personal AI assistant distributed across a Windows PC, an iPhone and a small
 always-on backend.
 
-**Current state: M4 implemented and awaiting acceptance — JARVIS listens.** Say
-"Jarvis", then "открой Notepad", and it opens. Say "закрой Notepad" and it asks
-you to confirm first.
+**Current state: M5 implemented, awaiting the owner's spoken acceptance.**
+
+```
+start-jarvis.bat
+```
+
+That brings up the database, the backend and the agent, and opens the
+microphone. Then say "Jarvis", and:
+
+| Say | What happens |
+|---|---|
+| «открой Notepad» | It opens. «закрой Notepad» asks you to confirm first |
+| «что у меня сегодня?» | Today's tasks from your tracker, read as a sentence rather than a list |
+| «добавь задачу на завтра» | Written to the tracker. Completing or moving one asks first |
+| «найди в интернете последнюю версию Python» | It searches, and answers from what came back — not from what it remembers |
+| «сколько я сегодня работал?» | Hours at the machine, from what was actually observed |
+| «во сколько магриб?» | Computed here, from the date and your coordinates |
+
+And without being asked: a reminder before something timed, a briefing in the
+morning, a word after too long at the desk, and the day written down as a note
+in your tracker each evening.
 
 The model proposes; the Policy Engine and the agent decide. Speaking to it
 grants nothing that typing would not: the voice path produces text and hands it
@@ -34,6 +52,10 @@ cosmetic gain, so only the user-facing name changed.
 | [M3-REPORT.md](docs/M3-REPORT.md) | What M3 delivered, including the adversarial matrix |
 | [M4-PLAN.md](docs/M4-PLAN.md) | The voice engine as planned, and the choices behind it |
 | [M4-REPORT.md](docs/M4-REPORT.md) | What M4 delivered, what it measured, and what is still wrong |
+| [M5-REPORT.md](docs/M5-REPORT.md) | The internet, the day, speaking first, prayer times and character |
+| [PRAYER-SCHEDULE.md](docs/PRAYER-SCHEDULE.md) | Supplying your own timetable, instead of computing one |
+| [PERSONALITY-IMPLEMENTATION.md](docs/PERSONALITY-IMPLEMENTATION.md) | The first conservative style provider, and its limits |
+| [CODEX-PARALLEL-HANDOFF.md](docs/CODEX-PARALLEL-HANDOFF.md) | What the second agent built, and what it found on the way |
 | [TRACKER-CHANGE-PLAN.md](docs/TRACKER-CHANGE-PLAN.md) | The tracker that already exists, and what integrating it would change |
 | [PERSONALITY-ENGINE.md](docs/PERSONALITY-ENGINE.md) | Adaptive communication style — roadmap, never policy |
 

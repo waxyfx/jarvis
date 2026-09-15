@@ -380,6 +380,28 @@ Far enough north there are summer nights when the sun never reaches the twilight
 angle. Those prayers come back absent rather than guessed, and the answer says
 which ones.
 
+## How JARVIS words its replies
+
+A small deterministic layer runs at the very end of a turn, after the audit
+entry. It can add at most a short address and can never change a fact, reach a
+tool, or touch a policy decision.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `ATLAS_PERSONALITY_ENABLED` | `true` | `false` sends replies exactly as the model wrote them |
+| `ATLAS_PERSONALITY_MODE` | `jarvis` | `professional` (no decoration), `jarvis`, `personal`, `custom` |
+| `ATLAS_PERSONALITY_ADDRESS` | `auto` | `sir` always, `none` never, `auto` follows the mode |
+
+Two behaviours that look like faults and are not:
+
+**It does not say "сэр" every turn.** Said every time it stops being character
+and becomes a tic, so there is a cooldown.
+
+**Any turn that used a tool goes out verbatim.** Not "tools that succeeded" —
+any tool at all. An answer the owner is about to act on is not somewhere to
+experiment with wording, and at that layer there is no reliable way to tell an
+attempt from a success.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |

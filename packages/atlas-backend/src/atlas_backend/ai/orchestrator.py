@@ -47,6 +47,14 @@ from atlas_backend.audit import AuditActor, AuditEvent, append
 from atlas_backend.config import Settings
 from atlas_backend.db.models import Device, ToolCall
 from atlas_backend.logging import get_logger
+from atlas_backend.personality.engine import (
+    Address,
+    Mode,
+    PersonalityProvider,
+    StyleConfig,
+    StyleHistory,
+)
+from atlas_backend.personality.turn import snapshot_turn
 from atlas_backend.policy import CallStatus, ToolDispatcher
 from atlas_shared.enums import Language
 from atlas_shared.tools.catalog import CATALOG
@@ -107,10 +115,23 @@ class Assistant:
         provider: AIProvider,
         dispatcher: ToolDispatcher,
         settings: Settings,
+        personality: PersonalityProvider | None = None,
     ) -> None:
         self._provider = provider
         self._dispatcher = dispatcher
         self._settings = settings
+        #: How the reply is presented, after everything about *what* it says has
+        #: been decided. Absent means replies go out exactly as the model wrote
+        #: them, which is the behaviour every test above this line assumes.
+        self._personality = personality
+        self._style = StyleConfig(
+            mode=Mode(settings.personality_mode),
+            address=Address(settings.personality_address),
+        )
+        #: One history per device, so a preface is not repeated turn after turn.
+        #: Presentation ids only: no text, no inference, nothing about the
+        #: person. Lost on restart, which costs nothing but variety.
+        self._histories: dict[uuid.UUID, StyleHistory] = {}
 
     async def handle(
         self,
@@ -178,7 +199,38 @@ class Assistant:
                 "model": result.served_model,
             },
         )
+
+        self._present(result, target.id)
         return result
+
+    def _present(self, result: TurnResult, device_id: uuid.UUID) -> None:
+        """Let the personality layer choose how the reply is worded.
+
+        Deliberately the last thing that happens, and deliberately after the
+        audit entry: the trail records what was decided, and this only changes
+        how it is said. The layer cannot reach a tool, a policy decision or a
+        SQLAlchemy object — it is handed an immutable snapshot of the text, and
+        any turn that involved a tool is passed through verbatim.
+
+        A failure here must never cost the owner their answer. The reply the
+        model produced is already correct; a decoration that raises is a
+        decoration not applied.
+        """
+        if self._personality is None:
+            return
+        try:
+            snapshot = snapshot_turn(result)
+            presented = self._personality.present(
+                snapshot,
+                config=self._style,
+                history=self._histories.get(device_id, StyleHistory()),
+            )
+        except Exception:
+            log.warning("personality_failed")
+            return
+
+        self._histories[device_id] = presented.history
+        result.reply = presented.text
 
     # ------------------------------------------------------------------ loop
 

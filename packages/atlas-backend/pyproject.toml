@@ -15,10 +15,11 @@ dependencies = [
     "structlog>=24.4",
     "httpx>=0.27",
     # Windows ships no IANA time zone database, so `ZoneInfo("Asia/Almaty")`
-    # raises there — which, since the proactive rules resolve the owner's
-    # zone at startup, would take the whole backend down on the machine it
-    # is meant to run on. Found by a test, before it was found by the owner.
-    "tzdata>=2024.2",
+    # raises there - which, since the proactive rules and the prayer schedule
+    # both resolve a zone at startup, would take the whole backend down on the
+    # machine it is meant to run on. Found by a test, before it was found by
+    # the owner.
+    "tzdata>=2025.2",
 ]
 
 [project.scripts]
