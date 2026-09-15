@@ -211,7 +211,13 @@ class Settings(BaseSettings):
     personality_mode: str = "jarvis"
     #: auto | none | sir
     personality_address: str = "auto"
-    ai_request_timeout_s: float = Field(default=30.0, gt=1.0, le=300.0)
+    #: One request to one model. Raised from 30 s after the fallback path was
+    #: measured: a lite model given this project's full tool catalogue and
+    #: system instruction took longer than thirty seconds, so the fallback timed
+    #: out and the owner was told the model was unavailable when a second one
+    #: was in the middle of answering. Two attempts still fit inside the
+    #: ninety-second turn budget.
+    ai_request_timeout_s: float = Field(default=45.0, gt=1.0, le=300.0)
     #: Retries for transient upstream failures (429, 5xx). A rate limit is a
     #: "wait a moment", not a "cannot do that" — telling the user the model is
     #: unavailable when one retry would have worked is a worse answer than the
