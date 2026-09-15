@@ -16,6 +16,7 @@ it is the problem this integration has to solve.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
@@ -163,3 +164,12 @@ class TrackerProvider(Protocol):
     async def reschedule_task(self, *, task_id: str, when: datetime) -> Applied: ...
 
     async def set_priority(self, *, task_id: str, priority: Priority) -> Applied: ...
+
+    # --------------------------------------------------------------- filing
+    #
+    # Not a voice tool. Nothing in the catalogue reaches this, and nothing
+    # should: the model has no reason to write prose into the owner's notes,
+    # and giving it one would be a way to persist whatever a web page talked it
+    # into. The daily report is the only caller, and it runs on a clock.
+
+    async def add_note(self, *, title: str, body: str, tags: Sequence[str] = ()) -> str: ...

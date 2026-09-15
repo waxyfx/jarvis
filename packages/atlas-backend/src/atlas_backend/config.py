@@ -161,6 +161,18 @@ class Settings(BaseSettings):
     #: filter.
     quiet_from_hour: int = Field(default=23, ge=0, le=23)
     quiet_until_hour: int = Field(default=7, ge=0, le=23)
+
+    # ------------------------------------------------- daily report (M5)
+    #: The day written down as a note in the tracker: which tasks were done,
+    #: which were not, how the time at the computer went.
+    #:
+    #: Needs a tracker that can file a note, so it is off in practice when
+    #: nothing is configured — the flag only decides whether to try.
+    daily_report_enabled: bool = True
+    #: Late enough to be the end of the day, early enough that the owner is
+    #: likely still awake to see it appear. Unlike the notifications, it does
+    #: not require anyone to be at the machine.
+    daily_report_hour: int = Field(default=22, ge=0, le=23)
     ai_request_timeout_s: float = Field(default=30.0, gt=1.0, le=300.0)
     #: Retries for transient upstream failures (429, 5xx). A rate limit is a
     #: "wait a moment", not a "cannot do that" — telling the user the model is

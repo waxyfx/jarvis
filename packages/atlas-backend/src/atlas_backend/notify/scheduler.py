@@ -32,6 +32,7 @@ from atlas_backend.db.session import Database
 from atlas_backend.logging import get_logger
 from atlas_backend.notify.notifier import Notifier
 from atlas_backend.notify.rules import Moment, Schedule, decide_all
+from atlas_backend.reports.writer import DailyReportWriter
 from atlas_backend.tracker.provider import Task, TrackerError, TrackerProvider
 from atlas_backend.ws.hub import Hub
 from atlas_shared.enums import DeviceKind
@@ -74,6 +75,13 @@ class ProactiveScheduler:
             quiet_until_hour=settings.quiet_until_hour,
         )
         self._zone = _zone_or_utc(settings.owner_timezone)
+        #: The written report, which shares this loop but not its rules: it does
+        #: not need anyone to be present and it is filed rather than spoken.
+        self._report = (
+            DailyReportWriter(database=database, tracker=tracker, hour=settings.daily_report_hour)
+            if settings.daily_report_enabled
+            else None
+        )
         #: What has already been said, by key. Cleared when the day changes, so
         #: it cannot grow without bound over an uptime measured in weeks.
         self._said: set[str] = set()
@@ -123,6 +131,11 @@ class ProactiveScheduler:
         sent = 0
         for device_id in self._agents():
             sent += await self._tick_device(device_id, moment_now)
+
+        # After the notifications, and independent of them: a report is filed
+        # whether or not anyone was at the machine to be spoken to.
+        if self._report is not None:
+            await self._report.maybe_write(moment_now)
         return sent
 
     def _agents(self) -> list[uuid.UUID]:

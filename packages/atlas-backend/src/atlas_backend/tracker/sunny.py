@@ -24,6 +24,7 @@ Sunny's own side is.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -284,6 +285,21 @@ class SunnyTracker:
             what=_title_of(updated) or task_id,
             detail=f"moved to {when.strftime('%Y-%m-%d %H:%M')}",
         )
+
+    async def add_note(self, *, title: str, body: str, tags: Sequence[str] = ()) -> str:
+        """File a written note. Used by the daily report.
+
+        Not a voice tool and deliberately not in the catalogue: the model has no
+        reason to write prose into the owner's notes, and giving it one would be
+        a way to persist whatever a web page talked it into. The only caller is
+        the report writer, on a clock.
+        """
+        created = await self._request(
+            "POST",
+            "/api/notes",
+            json={"title": title[:200], "body": body[:20000], "tags": list(tags)},
+        )
+        return _id_of(created)
 
     async def set_priority(self, *, task_id: str, priority: Priority) -> Applied:
         updated = await self._request(
