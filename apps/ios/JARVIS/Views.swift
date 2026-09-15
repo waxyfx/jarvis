@@ -234,7 +234,7 @@ struct HomeView: View {
         guard let backend = session.backend else { return }
         Task {
             do {
-                _ = try await backend.confirm(callID: action.callID)
+                _ = try await backend.confirm(callID: action.id)
                 await load()
             } catch {
                 problem = error.localizedDescription

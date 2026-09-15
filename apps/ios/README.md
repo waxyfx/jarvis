@@ -64,6 +64,25 @@ Type the `code_display` into the app with the server address. The phone
 generates its key, signs the code with it, and is enrolled. Nothing secret is
 typed, and the code is single-use.
 
+## What is checked without a compiler
+
+Two tests on the backend side read this app's source and compare it with what
+the backend actually sends:
+
+- `test_ios_signing_contract.py` — the signing domains and separator, because a
+  changed domain produces a signature that verifies against nothing and the
+  symptom is "the phone cannot pair", which points at the phone.
+- `test_ios_overview_contract.py` — every key in every `CodingKeys`, because
+  Swift's decoder is strict and a missing field surfaces as "JARVIS answered
+  something this app could not read", which points at the backend.
+
+The second one earned its keep before it was even committed: this app decoded
+`call_id` from the assistant endpoint, which has sent `id` since M3. Every tool
+call in the Ask screen would have failed to decode, on a phone, weeks later.
+
+They do not replace building it. They catch the class of bug that a build would
+not: a rename on the backend that nobody carries across.
+
 ## What is deliberately absent
 
 **Push notifications.** They need an Apple developer account, an APNs key and a

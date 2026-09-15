@@ -58,11 +58,16 @@ class MachineOut(BaseModel):
 
 
 class PendingOut(BaseModel):
-    """An action waiting for someone to say yes."""
+    """An action waiting for someone to say yes.
+
+    ``id`` rather than ``call_id`` because that is what the assistant endpoint
+    has called it since M3. Two endpoints naming the same thing differently is
+    how a client ends up decoding one and failing on the other.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
-    call_id: uuid.UUID
+    id: uuid.UUID
     tool: str
     risk: str
     requested_at: datetime
@@ -111,7 +116,7 @@ async def overview(request: Request, session: DbSession, caller: TrustedDevice) 
         machines=machines,
         pending=[
             PendingOut(
-                call_id=call.id,
+                id=call.id,
                 tool=call.tool_name,
                 risk=call.risk_assessed,
                 requested_at=call.created_at,

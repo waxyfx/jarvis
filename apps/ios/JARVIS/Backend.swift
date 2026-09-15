@@ -39,16 +39,15 @@ struct Machine: Decodable, Identifiable {
     }
 }
 
+/// What `/v1/overview` reports as waiting.
 struct PendingAction: Decodable, Identifiable {
-    let callID: String
+    let id: String
     let tool: String
     let risk: String
     let requestedAt: Date
 
-    var id: String { callID }
-
     enum CodingKeys: String, CodingKey {
-        case callID = "call_id"
+        case id
         case tool
         case risk
         case requestedAt = "requested_at"
@@ -71,8 +70,11 @@ struct Overview: Decodable {
 
 struct Answer: Decodable {
     let reply: String
-    let executed: [ExecutedCall]
-    let pendingConfirmation: [PendingAction]
+    let executed: [ToolCallSummary]
+    /// A different shape from `/v1/overview`'s pending list, and deliberately a
+    /// different type: this one carries the decision and the result, that one
+    /// carries when it was asked for.
+    let pendingConfirmation: [ToolCallSummary]
     let stoppedBecause: String
 
     enum CodingKeys: String, CodingKey {
@@ -82,16 +84,17 @@ struct Answer: Decodable {
     }
 }
 
-struct ExecutedCall: Decodable, Identifiable {
-    let callID: String
+/// One tool call, as the assistant endpoint reports it.
+struct ToolCallSummary: Decodable, Identifiable {
+    let id: String
     let tool: String
+    let risk: String
+    let decision: String
     let status: String
-
-    var id: String { callID }
+    let refusal: String?
 
     enum CodingKeys: String, CodingKey {
-        case callID = "call_id"
-        case tool, status
+        case id, tool, risk, decision, status, refusal
     }
 }
 
@@ -159,7 +162,7 @@ actor Backend {
     /// The phone confirms; it never decides. What may be confirmed at all, and
     /// what happens next, are the backend's business — this only carries the
     /// answer.
-    func confirm(callID: String) async throws -> ExecutedCall {
+    func confirm(callID: String) async throws -> ToolCallSummary {
         try await authorised(path: "/v1/tools/calls/\(callID)/confirm", method: "POST")
     }
 
