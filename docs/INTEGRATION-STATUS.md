@@ -7,7 +7,7 @@ backwards from the end of the roadmap. This file is where they meet.
 |---|---|
 | Astra's branch | `codex/prayer-personality`, worktree `C:/Users/serik/atlas-codex-prayer-personality` |
 | Last reviewed Astra commit | `32bae94` — merged into main |
-| Claude's NEXT | ad-hoc reminders ("напомни мне через 20 минут"), then push to the phone |
+| Claude's NEXT | Kazakh, or web protection — reminders, memory, overview and the iOS source are done |
 | Astra's NEXT | unknown; her worktree has an uncommitted `prayer/calculator.py` that is now superseded |
 
 **Superseded:** Astra's `calculator.py` argued for adhanpy over hand-rolled
@@ -61,7 +61,12 @@ any of it:
 | Activity summaries | `activity/` | Wired; `activity.today` in the catalogue |
 | Proactive notifications | `notify/` | Wired; `server.notify` is a new **signed** message |
 | Daily report into Sunny | `reports/` | Wired to the proactive loop; one real report filed |
-| Prayer **computation** | `prayer/times.py`, `prayer/tools.py` | Wired; `prayer.today` in the catalogue, reminders in `notify/rules.py` |
+| Prayer **computation** | `prayer/times.py`, `prayer/tools.py` | adhanpy behind the same `compute()`; wired |
+| Ad-hoc reminders | `reminders/` | Wired; table `reminders`, migration 0004 |
+| Memory | `memory/` | Wired; table `memories`, migration 0005, injected into the prompt |
+| Phone overview | `api/overview.py` | `GET /v1/overview` |
+| iOS app | `apps/ios/` | Source only, never compiled |
+| Deployment | `deploy/`, `infra/` | Scripts written; image never built |
 | Launcher | `start-jarvis.bat`, `scripts/start_jarvis.ps1` | Database, backend, agent, in order |
 | Dispatcher, catalogue, config, orchestrator, `main.py` | | Actively edited; coordinate before touching |
 

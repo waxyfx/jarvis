@@ -61,7 +61,9 @@ Last updated: 2026-09-15 (evening).
 | `web.read` + SSRF refusals | done | 23 unit, 18 gate | — |
 | `activity.today` | done | 16 + 7, live through the stack | — |
 | Prayer computation | done | 55 unit; adhanpy, cross-checked against our own across 5 cities | coordinates `USER_ACTION_REQUIRED` |
-| Ad-hoc reminders | done | 15 unit + integration | — |
+| Ad-hoc reminders | done | 15 unit + integration; live end to end | — |
+| Memory (`запомни, что…`) | done | 13 integration | — |
+| Model fallback on 429/503 | done | 6 unit; found and fixed live | — |
 | Prayer timetable (supplied) | validated | 24 unit | nothing reads a file yet |
 | Personality | done | 95 + 8, live | — |
 
@@ -87,7 +89,7 @@ Last updated: 2026-09-15 (evening).
 
 ## 8. Not started, not blocked
 
-Memory and personalisation · Kazakh · web protection · presence and posture.
+Kazakh · web protection · presence and posture.
 
 ---
 
