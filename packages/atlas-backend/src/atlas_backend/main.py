@@ -27,6 +27,7 @@ from atlas_backend.ratelimit import SlidingWindowLimiter
 from atlas_backend.server_identity import ServerIdentity
 from atlas_backend.tracker.provider import TrackerProvider, TrackerUnavailableError
 from atlas_backend.tracker.sunny import SunnyTracker
+from atlas_backend.web.tools import WebTools
 from atlas_backend.ws import Hub, ws_router
 
 __all__ = ["create_app"]
@@ -64,6 +65,7 @@ def create_app(
     *,
     ai_provider: AIProvider | None = None,
     tracker: TrackerProvider | None = None,
+    web: WebTools | None = None,
 ) -> FastAPI:
     """Build the application.
 
@@ -74,6 +76,9 @@ def create_app(
         tracker: Overrides the configured tracker, for the same reason. Without
             it a test would need a running Next.js app to prove that a tracker
             call does not go to the agent.
+        web: Overrides the web tools, so a test can assert what was searched and
+            fetched without reaching the internet — and so no test run can put
+            traffic on someone else's server.
     """
     resolved = settings or get_settings()
     configure_logging(level=resolved.log_level, json_output=resolved.is_production)
@@ -92,6 +97,7 @@ def create_app(
             server_identity=app.state.server_identity,
             settings=resolved,
             tracker=tracker or _build_tracker(resolved),
+            web=web,
         )
         app.state.pairing_limiter = SlidingWindowLimiter(
             limit=resolved.pairing_rate_limit_per_minute, window_s=60.0

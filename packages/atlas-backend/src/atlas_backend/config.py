@@ -121,6 +121,16 @@ class Settings(BaseSettings):
     sunny_base_url: str = ""
     sunny_token: SecretStr | None = None
     sunny_timeout_s: float = Field(default=15.0, gt=1.0, le=60.0)
+
+    # ------------------------------------------------------------------- web
+    #: Whether the assistant may look things up on the internet.
+    #:
+    #: On by default, unlike the tracker, because there is no credential to
+    #: configure and nothing to leak — the search provider needs no account.
+    #: The switch exists for the case where this backend should not be reaching
+    #: outward at all, and turning it off removes the web tools from what the
+    #: model is offered rather than letting it call them and be refused.
+    web_tools_enabled: bool = True
     ai_request_timeout_s: float = Field(default=30.0, gt=1.0, le=300.0)
     #: Retries for transient upstream failures (429, 5xx). A rate limit is a
     #: "wait a moment", not a "cannot do that" — telling the user the model is

@@ -604,3 +604,84 @@ CATALOG.register(
         rate_limit_per_minute=20,
     )
 )
+
+
+# --------------------------------------------------------------------------
+# web
+#
+# Looking things up on the internet, because a model answering "what is the
+# latest version of X" from training data states an old fact with no sign that
+# it is old. Asked to find something out, the assistant should go and find out.
+#
+# Both run on the backend. The laptop may be switched off, and fetching
+# addresses from inside the owner's own network is the thing not to do.
+#
+# Both are LOW and reversible: reading changes nothing. The risk here is not
+# the action, it is what comes back — a page is written by a stranger, and the
+# orchestrator already marks everything after a tool call as external content,
+# which suspends standing permissions for the rest of the turn.
+#
+# `web.read` takes a URL, which is the only place in the catalogue where the
+# model supplies an address. It is not free to name one: the handler opens only
+# what a search returned, and the reader refuses any address that is not on the
+# public internet. See atlas_backend/web/tools.py for why that pairing is the
+# line, and packages/atlas-backend/tests/test_web_tools.py for the proof.
+# --------------------------------------------------------------------------
+
+
+class WebSearchArgs(_Args):
+    query: str = Field(
+        min_length=2,
+        max_length=300,
+        description=(
+            "What to look up, in the words a person would search with. Use this "
+            "whenever the answer depends on anything current — versions, prices, "
+            "news, whether something has happened yet — rather than answering "
+            "from memory."
+        ),
+    )
+
+
+CATALOG.register(
+    ToolManifest(
+        name="web.search",
+        version=1,
+        summary="Search the internet and return a few results with their sources.",
+        args_model=WebSearchArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=25.0,
+        runs_on="backend",
+        requires_capabilities=("web",),
+        rate_limit_per_minute=20,
+    )
+)
+
+
+class WebReadArgs(_Args):
+    url: str = Field(
+        min_length=8,
+        max_length=2048,
+        pattern=r"^https?://",
+        description=(
+            "The address of one of the results a previous web.search returned. "
+            "Addresses from anywhere else are refused — search first, then open "
+            "a result."
+        ),
+    )
+
+
+CATALOG.register(
+    ToolManifest(
+        name="web.read",
+        version=1,
+        summary="Open one search result and read what the page actually says.",
+        args_model=WebReadArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=30.0,
+        runs_on="backend",
+        requires_capabilities=("web",),
+        rate_limit_per_minute=15,
+    )
+)

@@ -37,6 +37,7 @@ from atlas_backend.tracker.provider import (
     TrackerUnavailableError,
 )
 from atlas_backend.tracker.tools import run_tracker_tool
+from atlas_backend.web.tools import WEB_TOOLS, WebToolError, WebTools, run_web_tool
 from atlas_backend.ws.hub import DeviceOfflineError, Hub
 from atlas_shared.enums import AgentMode, Decision, ToolStatus, TrustLevel
 from atlas_shared.ids import new_ulid
@@ -75,6 +76,7 @@ class ToolDispatcher:
         server_identity: ServerIdentity,
         settings: Settings,
         tracker: TrackerProvider | None = None,
+        web: WebTools | None = None,
     ) -> None:
         self._hub = hub
         self._identity = server_identity
@@ -82,17 +84,25 @@ class ToolDispatcher:
         #: Absent unless configured. When it is absent the tracker tools are not
         #: offered to the model at all, so a call for one should never arrive.
         self._tracker = tracker
+        #: Present unless switched off. Unlike the tracker this needs no
+        #: credential — there is nothing to configure and nothing to leak — so
+        #: the default is on, and the setting exists for the case where the
+        #: backend should not be reaching the internet at all.
+        self._web = web if web is not None else (WebTools() if settings.web_tools_enabled else None)
 
     def available_tools(self) -> frozenset[str]:
         """Tool names this dispatcher can actually run.
 
         The catalogue declares what exists; this says what is reachable here.
-        Offering the model a tracker tool with no tracker behind it would earn
-        a refusal it could do nothing about, and would teach it to keep trying.
+        Offering the model a tool with nothing behind it would earn a refusal it
+        could do nothing about, and would teach it to keep trying.
         """
-        if self._tracker is not None:
-            return CATALOG.names()
-        return frozenset(name for name in CATALOG.names() if CATALOG.get(name).runs_on != "backend")
+        missing: set[str] = set()
+        if self._tracker is None:
+            missing |= {name for name in CATALOG.names() if name.startswith("tracker.")}
+        if self._web is None:
+            missing |= set(WEB_TOOLS)
+        return frozenset(CATALOG.names() - missing)
 
     def risk_context(self) -> RiskContext:
         return RiskContext(
@@ -182,10 +192,10 @@ class ToolDispatcher:
         """Run a call the backend owns.
 
         No envelope, no signature, nothing on the wire to the agent: a tracker
-        call never becomes a signed command, so there is nothing to replay
-        against the machine. Everything before this point — risk, confirmation,
-        the audit trail — happened exactly as it does for an agent tool, which
-        is the property worth keeping.
+        or web call never becomes a signed command, so there is nothing to
+        replay against the machine. Everything before this point — risk,
+        confirmation, the audit trail — happened exactly as it does for an agent
+        tool, which is the property worth keeping.
         """
         call.status = CallStatus.DISPATCHED
         call.dispatched_at = utc_now()
@@ -194,16 +204,15 @@ class ToolDispatcher:
 
         started = time.monotonic()
         try:
-            if self._tracker is None:
-                raise TrackerUnavailableError("no tracker is configured")
-            result = await run_tracker_tool(self._tracker, call.tool_name, call.args)
-        except TrackerError as exc:
+            result = await self._run_backend_tool(call)
+        except (TrackerError, WebToolError) as exc:
             call.status = CallStatus.COMPLETED
             call.completed_at = utc_now()
             call.duration_ms = int((time.monotonic() - started) * 1000)
-            # Reported rather than raised: the assistant should say the tracker
-            # could not do it, in the same breath as everything else that turn.
-            call.error = {"code": "tracker_error", "message": str(exc)}
+            # Reported rather than raised: the assistant should say it could not
+            # be done, in the same breath as everything else that turn.
+            code = "web_error" if call.tool_name in WEB_TOOLS else "tracker_error"
+            call.error = {"code": code, "message": str(exc)}
             await self._audit(session, call, AuditEvent.TOOL_FAILED, {"reason": str(exc)})
             await session.commit()
             return DispatchOutcome(call=call, result=None)
@@ -226,6 +235,23 @@ class ToolDispatcher:
                 duration_ms=call.duration_ms,
             ),
         )
+
+    async def _run_backend_tool(self, call: ToolCall) -> dict[str, Any]:
+        """Pick the family that owns this tool and run it.
+
+        A table rather than a chain of prefixes would be tidier with three
+        families; with two it would be indirection for its own sake. What
+        matters is that the name was in the catalogue before it got here, so
+        this is choosing between known things, not parsing one.
+        """
+        if call.tool_name in WEB_TOOLS:
+            if self._web is None:
+                raise WebToolError("web access is switched off")
+            return await run_web_tool(self._web, call.tool_name, call.args)
+
+        if self._tracker is None:
+            raise TrackerUnavailableError("no tracker is configured")
+        return await run_tracker_tool(self._tracker, call.tool_name, call.args)
 
     async def _dispatch_to_agent(self, session: AsyncSession, call: ToolCall) -> DispatchOutcome:
         """Send an approved call to the agent and record what came back."""
