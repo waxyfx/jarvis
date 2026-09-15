@@ -47,13 +47,22 @@ class VoiceChoice:
 
     english: str = "en_GB-alan-medium"
     russian: str = "ru_RU-dmitri-medium"
+    #: The best Kazakh voice Piper publishes. The alternatives are `x_low`,
+    #: which is noticeably worse; if this one is missing the fallback is English
+    #: rather than a bad rendering of Kazakh, because a Kazakh sentence read by
+    #: a Russian voice is worse than either.
+    kazakh: str = "kk_KZ-issai-high"
     #: Piper renders at its own rate; the pipeline runs at 16 kHz.
     directory: Path | None = None
     #: Below 1.0 speaks faster. Slightly slow reads as composed, not sluggish.
     length_scale: float = 1.0
 
     def for_language(self, language: Language) -> str:
-        return self.russian if language is Language.RU else self.english
+        if language is Language.RU:
+            return self.russian
+        if language is Language.KK:
+            return self.kazakh
+        return self.english
 
 
 @dataclass
@@ -169,6 +178,7 @@ class PiperTTS:
 ACKNOWLEDGEMENTS: dict[Language, tuple[str, ...]] = {
     Language.EN: ("Yes, sir?",),
     Language.RU: ("Да, сэр?",),
+    Language.KK: ("Иә, мырза?",),
 }
 
 DEFAULT_CACHE: tuple[str, ...] = tuple(

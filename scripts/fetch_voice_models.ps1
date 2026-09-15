@@ -73,7 +73,11 @@ Write-Step "Piper voices"
 $piperBase = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 $voices = @(
     @{ Name = "en_GB-alan-medium";   Path = "en/en_GB/alan/medium/en_GB-alan-medium" },
-    @{ Name = "ru_RU-dmitri-medium"; Path = "ru/ru_RU/dmitri/medium/ru_RU-dmitri-medium" }
+    @{ Name = "ru_RU-dmitri-medium"; Path = "ru/ru_RU/dmitri/medium/ru_RU-dmitri-medium" },
+    # Kazakh. The owner's tracker already has Kazakh in it, and a Kazakh
+    # sentence read by the Russian voice is worse than not answering in Kazakh
+    # at all. `high` rather than `x_low`: the difference is audible.
+    @{ Name = "kk_KZ-issai-high";    Path = "kk/kk_KZ/issai/high/kk_KZ-issai-high" }
 )
 foreach ($voice in $voices) {
     foreach ($extension in @(".onnx", ".onnx.json")) {

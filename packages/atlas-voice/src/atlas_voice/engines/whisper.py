@@ -135,10 +135,17 @@ _PROGRAMS = (
 _VOCABULARY: dict[Language, str] = {
     Language.EN: f"{_PROGRAMS} Open Chrome. Close Notepad. Show me the memory usage.",
     Language.RU: f"{_PROGRAMS} Открой Chrome. Закрой Notepad. Покажи использование памяти.",
+    # Kazakh gets the same treatment for the same reason: imperatives in the
+    # language being decoded, program names kept in Latin because that is how
+    # they are said.
+    Language.KK: f"{_PROGRAMS} Chrome ашыңыз. Notepad жабыңыз. Жады қолданысын көрсетіңіз.",
 }
 
-#: Used only when detection could not settle on a language. Both, because
-#: guessing one and being wrong is worse than a weaker prompt.
+#: Used only when detection could not settle on a language. English and Russian
+#: only, and deliberately not all three: mixing scripts in one prompt is exactly
+#: what produced the cross-language pull documented above, and adding a third
+#: makes it likelier rather than less. Kazakh is reached through detection or
+#: not at all.
 _VOCABULARY_EITHER = f"{_VOCABULARY[Language.EN]} {_VOCABULARY[Language.RU]}"
 
 
