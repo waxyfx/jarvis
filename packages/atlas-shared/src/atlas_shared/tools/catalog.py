@@ -859,7 +859,13 @@ CATALOG.register(
         summary="Drop a reminder before it goes off.",
         args_model=ReminderCancelArgs,
         base_risk=RiskLevel.LOW,
-        reversible=False,
+        # Reversible, and the catalogue's own invariant caught the lie: this was
+        # declared irreversible at LOW, which the rule "irreversible means at
+        # least MEDIUM" refuses. Cancelling sets `cancelled_at` and leaves the
+        # row, exactly as memory.forget does, and re-setting one is a sentence.
+        # The alternative — MEDIUM, so a confirmation is required — is friction
+        # in the middle of a sentence for something that costs a reminder.
+        reversible=True,
         timeout_s=10.0,
         runs_on="backend",
         requires_capabilities=("reminders",),
