@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from atlas_backend.api import assistant, audit, auth, devices, health, pairing, tools
+from atlas_backend.api import assistant, audit, auth, devices, health, overview, pairing, tools
 
 api_router = APIRouter(prefix="/v1")
 api_router.include_router(health.router)
@@ -12,5 +12,6 @@ api_router.include_router(auth.router)
 api_router.include_router(devices.router)
 api_router.include_router(audit.router)
 api_router.include_router(tools.router)
+api_router.include_router(overview.router)
 
 __all__ = ["api_router"]
