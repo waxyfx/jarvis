@@ -14,6 +14,8 @@ dependencies = [
     "pyjwt>=2.9",
     "structlog>=24.4",
     "httpx>=0.27",
+    # IANA timezone data, including Windows where there is no system database.
+    "tzdata>=2025.2",
 ]
 
 [project.scripts]
