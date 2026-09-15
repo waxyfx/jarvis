@@ -10,6 +10,11 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30",
     "alembic>=1.14",
+    # Declared rather than inherited. It arrives anyway through fastapi and
+    # pydantic-settings, and eight modules here import it directly — which is
+    # fine until one of those drops it or pins a major version, and then the
+    # break lands in a container on a host with nobody watching.
+    "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "pyjwt>=2.9",
     "structlog>=24.4",

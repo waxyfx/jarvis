@@ -3,35 +3,110 @@
 Operating ATLAS: deploying, pairing, recovering. Written for the person who owns
 the system — which is the same person who built it.
 
-## First deployment to a VPS
+## Putting the backend on a VPS
 
-Nothing here has been executed yet; the Docker path is written but unverified
-(no Docker on the development machine). Treat the first run as part of
-acceptance, not as a rehearsed procedure.
+The proactive half — reminders, the briefing, the evening summary, the daily
+report — runs on the backend's own clock. On the laptop that means nothing
+arrives while the laptop is shut. A small always-on host fixes it, and JARVIS
+keeps working locally either way: which backend the agent talks to is one
+environment variable.
 
-1. **DNS.** Point an `A` record at the VPS. Caddy needs this before it can
-   obtain a certificate.
-2. **Secrets.** Copy `.env.example` to `.env` and fill it in. Generate each
-   secret separately:
-   ```bash
-   python -c "import secrets; print(secrets.token_urlsafe(48))"
-   ```
-   `ATLAS_ENVIRONMENT=prod` turns on the production checks: the JWT secret must
-   be at least 32 characters, statement logging is refused, and the interactive
-   API docs are not served.
-3. **Bring up the database and backend.**
-   ```bash
-   cd infra && docker compose --env-file ../.env up -d --build
-   ```
-4. **Apply migrations.** They are deliberately *not* run on container start — an
-   automatic migration on boot turns a rollback into a data-loss event.
-   ```bash
-   docker compose exec backend alembic -c /app/alembic.ini upgrade head
-   ```
-5. **Check.**
-   ```bash
-   curl -fsS https://your-domain/v1/health/ready
-   ```
+### What you need first
+
+A host (any 1 GB VPS is plenty) and a domain name with an `A` record already
+pointing at it. Caddy obtains the certificate itself, but only for a name that
+already resolves — a request against a name that does not counts against Let's
+Encrypt's rate limit.
+
+### Setting it up
+
+On the server:
+
+```bash
+git clone https://github.com/waxyfx/jarvis.git && cd jarvis
+./deploy/vps-setup.sh jarvis.your-domain.com
+```
+
+It installs Docker if it is missing, generates every secret into a `0600` `.env`,
+builds and starts postgres/backend/Caddy, applies migrations explicitly, waits
+for the health check, and prints a pairing code. **No secret is printed** — the
+bootstrap token stays on the server and the code it issues is single-use and
+expires in minutes.
+
+Then on Windows, two commands:
+
+```bash
+setx ATLAS_AGENT_BACKEND_URL "https://jarvis.your-domain.com"
+```
+
+```bash
+atlas-agent pair --code XXXX-XXXX
+```
+
+`setx` does not affect the window it was typed in — open a new one. Then start
+JARVIS as usual.
+
+Finally, close bootstrap pairing and restart:
+
+```bash
+sed -i 's/^ATLAS_BOOTSTRAP_TOKEN=/#ATLAS_BOOTSTRAP_TOKEN=/' .env && ./deploy/update.sh
+```
+
+### Keeping what is already on the laptop
+
+Optional, and the other way is fine. Starting clean loses the audit chain, the
+device registry and the activity history; if none of that matters yet, pair
+again and skip this.
+
+To carry it over, on Windows:
+
+```bash
+powershell -ExecutionPolicy Bypass -File deploy\export-local.ps1
+```
+
+That writes a directory with a database dump, the three values that must match
+on the server, and a README naming the exact restore commands. **It contains the
+server signing key** — every paired device pinned its public half, so a server
+with a different key refuses every command from them without saying why. Move it
+over `ssh`, not email, and delete it when the move is done.
+
+Measured on this machine: a 42 KB dump restored into an empty database with the
+device registry, the messages and the tool calls intact, and
+`verify_chain` reporting `ok: True` over all 80 audit entries. The chain
+survives the move.
+
+### Afterwards
+
+```bash
+./deploy/update.sh          # pull, rebuild, migrate, restart, check
+./deploy/backup.sh          # database + .env, 0600, keeps 30 days
+```
+
+Install the backup as a cron job — the audit chain cannot be reconstructed and
+the signing key cannot be regenerated:
+
+```bash
+(crontab -l 2>/dev/null; echo "17 3 * * * $PWD/deploy/backup.sh") | crontab -
+```
+
+### Going back to local
+
+```bash
+setx ATLAS_AGENT_BACKEND_URL "http://127.0.0.1:8000"
+```
+
+Nothing else changes. `start-jarvis.bat` still brings up the whole stack on the
+laptop, which is what development uses.
+
+### What has and has not been verified
+
+| | |
+|---|---|
+| Backend runs with production dependencies only | **verified** — a venv built from the image's exported requirement set imports and constructs the app |
+| No import reaches the voice or agent packages | **verified** — `test_deployability.py`, on every commit |
+| Dump, restore, and the audit chain afterwards | **verified** on the real local database |
+| `docker compose build` | **not verified** — there is no Docker on the development machine |
+| TLS, Caddy, the first real deployment | **not verified** — treat the first run as acceptance |
 
 ## Pairing the first device
 
