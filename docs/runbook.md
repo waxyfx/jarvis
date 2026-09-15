@@ -438,7 +438,7 @@ kilometres, which moves Maghrib by twenty minutes.
 |---|---|---|
 | `ATLAS_PRAYER_ENABLED` | `true` | Whether to compute them at all |
 | `ATLAS_PRAYER_LATITUDE` / `_LONGITUDE` | unset | **Both required.** Almaty is `43.238` / `76.889` |
-| `ATLAS_PRAYER_METHOD` | `mwl` | `mwl`, `isna`, `egypt`, `makkah`, `karachi`, `tehran` |
+| `ATLAS_PRAYER_METHOD` | `mwl` | `mwl`, `isna`, `egypt`, `makkah`, `karachi`, `tehran`, `dubai`, `qatar`, `kuwait`, `singapore` |
 | `ATLAS_PRAYER_ASR` | `standard` | `hanafi` is about an hour later |
 | `ATLAS_PRAYER_REMINDER_MINUTES` | `10` | Minutes before each prayer. `0` keeps the times answerable and stops the reminders |
 
@@ -457,8 +457,16 @@ an hour later than what this computes, and that difference looks exactly like a
 bug until you know.
 
 Far enough north there are summer nights when the sun never reaches the twilight
-angle. Those prayers come back absent rather than guessed, and the answer says
-which ones.
+angle. A scholarly convention fills those in — the middle of the night, by
+default — and the answer marks which prayers it applied to, so a time from a
+rule is never presented as astronomy. Where no convention helps at all, such as
+a polar night, JARVIS says it cannot compute them rather than inventing a
+sunrise.
+
+The arithmetic is **adhanpy**: MIT-licensed, no dependencies of its own, and
+checked against this project's own trigonometry across five cities before the
+swap — they agreed to within three minutes everywhere and within one at Almaty.
+See `docs/measurements/prayer-engine-comparison.json`.
 
 ## How JARVIS words its replies
 

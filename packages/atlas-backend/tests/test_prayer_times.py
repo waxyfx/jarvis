@@ -24,7 +24,13 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from atlas_backend.prayer.times import METHODS, AsrMethod, Prayer, compute
+from atlas_backend.prayer.times import (
+    METHODS,
+    AsrMethod,
+    Prayer,
+    PrayerUnavailableError,
+    compute,
+)
 
 UTC = ZoneInfo("UTC")
 ALMATY = ZoneInfo("Asia/Almaty")
@@ -116,15 +122,20 @@ class TestTheOrderOfTheDay:
         assert times.asr is not None and times.maghrib is not None
         assert times.dhuhr < times.asr < times.maghrib
 
-    def test_maghrib_is_sunset(self) -> None:
-        """Not an approximation of it: the same calculation, mirrored about
-        noon. A drift between the two would mean one of them is wrong."""
+    def test_sunrise_and_sunset_sit_either_side_of_noon(self) -> None:
+        """Roughly symmetric, not exactly so.
+
+        The old hand-rolled implementation mirrored everything about solar noon,
+        so this held to the minute — which was a property of the arithmetic
+        rather than of the sky. The declination moves between dawn and dusk, and
+        in mid-September it moves fast, so three minutes of asymmetry is the
+        real answer. A gross one would still mean something is wrong."""
         times = compute(date(2026, 9, 15), **ALMATY_AT)
 
         assert times.sunrise is not None and times.maghrib is not None
         before = minutes_between(times.sunrise, times.dhuhr)
         after = minutes_between(times.dhuhr, times.maghrib)
-        assert before == pytest.approx(after, abs=2)
+        assert before == pytest.approx(after, abs=6)
 
 
 class TestTheSchools:
@@ -165,23 +176,49 @@ class TestTheSchools:
         )
 
 
-class TestWhereThereIsNoAnswer:
-    def test_far_north_in_summer_returns_nothing_rather_than_inventing_one(self) -> None:
-        """At 64 degrees in June the sun never gets 18 degrees below the
-        horizon. Every published time for that night is a convention, and
-        `None` is the only claim that is actually true."""
+class TestWhereTheSunDoesNotReachTheAngle:
+    """At 64 degrees in June the sun never gets 18 degrees below the horizon.
+
+    An earlier version returned nothing for those prayers, on the grounds that
+    every published time is a convention rather than an observation. That is
+    true and turned out to be the less useful half of the truth: someone who
+    lives there still prays, and a time attributed to a rule beats no time at
+    all. So a rule is applied, and the result says which prayers it touched.
+    """
+
+    def test_a_convention_fills_in_what_the_sun_did_not_decide(self) -> None:
         times = compute(MIDSUMMER, latitude=64.0, longitude=11.0, zone=ZoneInfo("Europe/Oslo"))
 
-        assert times.fajr is None
-        assert times.isha is None
-        assert times.asr is not None, "Asr still happens; only twilight is undefined"
+        assert times.fajr is not None
+        assert times.isha is not None
+        assert times.by_rule == (Prayer.FAJR, Prayer.ISHA)
+
+    def test_the_prayers_the_sun_did_decide_are_not_marked(self) -> None:
+        """Only twilight is undefined up there. Noon and Asr are ordinary."""
+        times = compute(MIDSUMMER, latitude=64.0, longitude=11.0, zone=ZoneInfo("Europe/Oslo"))
+
+        assert Prayer.ASR not in times.by_rule
+        assert times.asr is not None
         assert times.sunrise is not None
 
-    def test_what_is_missing_does_not_appear_in_the_result(self) -> None:
-        times = compute(MIDSUMMER, latitude=64.0, longitude=11.0, zone=ZoneInfo("Europe/Oslo"))
+    def test_where_the_sun_reaches_the_angle_nothing_is_marked(self) -> None:
+        """The control, and the case the owner actually lives in. At Almaty no
+        rule is ever needed, so a `by_rule` that is not empty there would mean
+        the detection itself is wrong."""
+        for on in (EQUINOX, MIDSUMMER, MIDWINTER):
+            assert compute(on, **ALMATY_AT).by_rule == (), on
 
-        assert "fajr" not in times.as_result()
-        assert "dhuhr" in times.as_result()
+    def test_polar_night_is_refused_rather_than_invented(self) -> None:
+        """Svalbard in December: the sun does not rise at all, and there is no
+        convention that produces a sunrise. Refusing is the only honest answer
+        left."""
+        with pytest.raises(PrayerUnavailableError):
+            compute(
+                MIDWINTER,
+                latitude=78.22,
+                longitude=15.65,
+                zone=ZoneInfo("Arctic/Longyearbyen"),
+            )
 
     def test_an_impossible_place_is_refused_by_name(self) -> None:
         with pytest.raises(ValueError, match="latitude"):

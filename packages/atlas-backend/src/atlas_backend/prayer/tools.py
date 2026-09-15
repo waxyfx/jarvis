@@ -11,7 +11,13 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
-from atlas_backend.prayer.times import AsrMethod, Prayer, PrayerTimes, compute
+from atlas_backend.prayer.times import (
+    AsrMethod,
+    HighLatitude,
+    PrayerTimes,
+    PrayerUnavailableError,
+    compute,
+)
 
 __all__ = ["PRAYER_TOOLS", "PrayerSettings", "PrayerToolError", "run_prayer_tool"]
 
@@ -35,12 +41,14 @@ class PrayerSettings:
         zone: Any,
         method: str = "mwl",
         asr: AsrMethod = AsrMethod.STANDARD,
+        high_latitude: HighLatitude = HighLatitude.MIDDLE_OF_THE_NIGHT,
     ) -> None:
         self.latitude = latitude
         self.longitude = longitude
         self.zone = zone
         self.method = method
         self.asr = asr
+        self.high_latitude = high_latitude
 
     def times(self, on: datetime) -> PrayerTimes:
         return compute(
@@ -50,11 +58,17 @@ class PrayerSettings:
             zone=self.zone,
             method=self.method,
             asr=self.asr,
+            high_latitude=self.high_latitude,
         )
 
 
 def _today(settings: PrayerSettings, now: datetime, _: Mapping[str, Any]) -> dict[str, Any]:
-    times = settings.times(now)
+    try:
+        times = settings.times(now)
+    except PrayerUnavailableError as exc:
+        # Polar day or polar night. Not a crash and not an empty answer that
+        # looks like "no prayers today".
+        raise PrayerToolError(str(exc)) from exc
     result: dict[str, Any] = dict(times.as_result())
 
     upcoming = times.next_after(now)
@@ -69,15 +83,13 @@ def _today(settings: PrayerSettings, now: datetime, _: Mapping[str, Any]) -> dic
             "in_minutes": max(0, round((at - now).total_seconds() / 60)),
         }
 
-    missing = [
-        prayer.value
-        for prayer in (Prayer.FAJR, Prayer.ISHA)
-        if getattr(times, prayer.value) is None
-    ]
-    if missing:
-        # Not an error and not a gap to paper over: this far north there are
-        # summer nights when the sun never reaches the twilight angle.
-        result["not_defined_today"] = missing
+    if times.by_rule:
+        # Said rather than hidden. This far north there are summer nights when
+        # the sun never reaches the twilight angle, and the time in the table is
+        # then a scholarly convention rather than an observation. "Fajr is at
+        # 00:16" reads as a fact; knowing a rule produced it is what lets the
+        # owner decide whether to trust it.
+        result["by_convention"] = [prayer.value for prayer in times.by_rule]
 
     return result
 

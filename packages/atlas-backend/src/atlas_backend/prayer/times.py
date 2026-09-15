@@ -1,36 +1,73 @@
 """Prayer times, computed here rather than fetched.
 
 There are free APIs for this. Not using one is deliberate: the request would
-carry the owner's coordinates and the fact that they pray to a third party, every
-day, for a calculation that is a page of trigonometry and needs nothing but the
-date. It also works with the internet down, which is the other half of why it is
-here.
+carry the owner's coordinates and the fact that they pray to a third party,
+every day, for a calculation that needs nothing but the date. It also works with
+the internet down, which is the other half of why it is here.
+
+**The arithmetic is adhanpy's, not ours.** MIT-licensed, no runtime
+dependencies, and years of people checking it against real timetables. This
+module was two hundred lines of hand-rolled trigonometry until a comparison
+across five cities and four solstice and equinox dates showed the two agreeing
+to within three minutes everywhere and within one at Almaty — at which point
+keeping our own meant carrying the risk for none of the benefit. Two real bugs
+had already been found in it, both by tests: an Asr angle with the wrong sign,
+and an unreduced solar longitude that computed every time for a date twenty-five
+days away while every time *of day* still looked correct.
+
+The public shape did not change, which is what made the swap checkable: the same
+``compute()``, the same :class:`PrayerTimes`, and the same fifty-one tests.
 
 **The method matters more than the arithmetic.** Sunrise and sunset are
 astronomy and have one right answer. Fajr and Isha are defined by how far the
-sun is below the horizon, and different authorities use different angles — the
-spread between them is twenty minutes or more at this latitude. The angle is
-therefore a setting, and nothing here pretends there is a single correct value.
-The owner should compare one day's output against their own mosque and adjust;
-:data:`METHODS` carries the common conventions and says who uses each.
+sun is below the horizon, and authorities disagree by twenty minutes or more at
+this latitude. The method is therefore a setting, and nothing here pretends
+there is a single correct value. The owner should compare one day against their
+own mosque; :data:`METHODS` says who uses each.
 
-**High latitudes are refused, not guessed.** Above roughly 48 degrees there are
-nights in summer when the sun never reaches the twilight angle at all, and every
-answer is a convention rather than a fact. Returning `None` for those prayers is
-honest; inventing a time is not.
-
-The algorithm is the standard one — solar position, equation of time, hour
-angles — as published by PrayTimes.org and used by most implementations.
+**Far north, a convention is applied and named.** Above roughly 48 degrees there
+are summer nights when the sun never reaches the twilight angle, and every
+published time for them is a rule rather than an observation. An earlier version
+returned nothing at all, which is defensible and turned out to be less useful
+than an answer that says which rule produced it — see :attr:`PrayerTimes.by_rule`.
 """
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, tzinfo
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, time, tzinfo
 from enum import StrEnum
+from typing import Any
 
-__all__ = ["METHODS", "AsrMethod", "Method", "Prayer", "PrayerTimes", "compute"]
+from adhanpy.calculation.CalculationMethod import (  # type: ignore[import-untyped]
+    CalculationMethod,
+)
+from adhanpy.calculation.CalculationParameters import (  # type: ignore[import-untyped]
+    CalculationParameters,
+)
+from adhanpy.calculation.HighLatitudeRule import (  # type: ignore[import-untyped]
+    HighLatitudeRule,
+)
+from adhanpy.calculation.Madhab import Madhab  # type: ignore[import-untyped]
+from adhanpy.PrayerTimes import PrayerTimes as _AdhanTimes  # type: ignore[import-untyped]
+
+__all__ = [
+    "METHODS",
+    "AsrMethod",
+    "HighLatitude",
+    "Method",
+    "Prayer",
+    "PrayerTimes",
+    "PrayerUnavailableError",
+    "compute",
+]
+
+
+class PrayerUnavailableError(RuntimeError):
+    """No rule produces an answer for that date and place.
+
+    Polar day and polar night. The message never contains the coordinates.
+    """
 
 
 class Prayer(StrEnum):
@@ -74,49 +111,62 @@ class AsrMethod(StrEnum):
     #: Hanafi: twice the object's length.
     HANAFI = "hanafi"
 
-    @property
-    def shadow_factor(self) -> int:
-        return 2 if self is AsrMethod.HANAFI else 1
+
+class HighLatitude(StrEnum):
+    """What to do on a night when the sun never reaches the twilight angle.
+
+    All three are conventions rather than observations, which is why the result
+    says when one was used. Names match adhanpy's so the mapping cannot drift.
+    """
+
+    #: Fajr and Isha are placed at the middle of the night. The most common.
+    MIDDLE_OF_THE_NIGHT = "middle_of_the_night"
+    #: A seventh of the night either side. Gives a longer night-time window.
+    SEVENTH_OF_THE_NIGHT = "seventh_of_the_night"
+    #: In proportion to the angles themselves.
+    TWILIGHT_ANGLE = "twilight_angle"
 
 
 @dataclass(frozen=True, slots=True)
 class Method:
-    """How far below the horizon the sun is at Fajr and at Isha."""
+    """How far below the horizon the sun is at Fajr and at Isha.
+
+    ``adhan_name`` names adhanpy's own convention where it has one. Where it
+    does not — Tehran — the angles are passed explicitly rather than the method
+    being quietly dropped, which would move somebody's Isha by half an hour.
+    """
 
     name: str
     fajr_angle: float
     isha_angle: float
     #: Some authorities define Isha as a fixed interval after Maghrib instead of
-    #: an angle. Ramadan variants aside, this is the Umm al-Qura convention.
+    #: an angle. This is the Umm al-Qura convention, Ramadan variants aside.
     isha_interval_minutes: int = 0
+    adhan_name: str | None = None
 
 
 #: The conventions in common use. Names are the ones people search for, so that
 #: someone comparing against a printed timetable can tell which one it is.
 METHODS: dict[str, Method] = {
-    "mwl": Method("Muslim World League", fajr_angle=18.0, isha_angle=17.0),
-    "isna": Method("Islamic Society of North America", fajr_angle=15.0, isha_angle=15.0),
-    "egypt": Method("Egyptian General Authority of Survey", fajr_angle=19.5, isha_angle=17.5),
+    "mwl": Method("Muslim World League", 18.0, 17.0, adhan_name="MUSLIM_WORLD_LEAGUE"),
+    "isna": Method("Islamic Society of North America", 15.0, 15.0, adhan_name="NORTH_AMERICA"),
+    "egypt": Method("Egyptian General Authority of Survey", 19.5, 17.5, adhan_name="EGYPTIAN"),
     "makkah": Method(
-        "Umm al-Qura, Makkah", fajr_angle=18.5, isha_angle=0.0, isha_interval_minutes=90
+        "Umm al-Qura, Makkah", 18.5, 0.0, isha_interval_minutes=90, adhan_name="UMM_AL_QURA"
     ),
-    "karachi": Method("University of Islamic Sciences, Karachi", fajr_angle=18.0, isha_angle=18.0),
-    "tehran": Method("Institute of Geophysics, Tehran", fajr_angle=17.7, isha_angle=14.0),
+    "karachi": Method("University of Islamic Sciences, Karachi", 18.0, 18.0, adhan_name="KARACHI"),
+    # No adhanpy equivalent: the angles are supplied directly.
+    "tehran": Method("Institute of Geophysics, Tehran", 17.7, 14.0),
+    "dubai": Method("Dubai", 18.2, 18.2, adhan_name="DUBAI"),
+    "qatar": Method("Qatar", 18.0, 0.0, isha_interval_minutes=90, adhan_name="QATAR"),
+    "kuwait": Method("Kuwait", 18.0, 17.5, adhan_name="KUWAIT"),
+    "singapore": Method("Singapore", 20.0, 18.0, adhan_name="SINGAPORE"),
 }
-
-#: The sun's centre this far below the horizon at sunrise and sunset: half the
-#: solar disc plus atmospheric refraction.
-_HORIZON = 0.833
 
 
 @dataclass(frozen=True, slots=True)
 class PrayerTimes:
-    """One day's times, in the owner's own timezone.
-
-    A value of ``None`` means the sun never reached that angle: a real answer
-    for a summer night this far north, and better than a number nobody can pray
-    by.
-    """
+    """One day's times, in the owner's own timezone."""
 
     on: date
     fajr: datetime | None
@@ -125,6 +175,9 @@ class PrayerTimes:
     asr: datetime | None
     maghrib: datetime | None
     isha: datetime | None
+    #: Prayers whose time today came from a high-latitude convention rather than
+    #: from the sun actually reaching the angle. Empty almost everywhere.
+    by_rule: tuple[Prayer, ...] = field(default=())
 
     def items(self) -> list[tuple[Prayer, datetime]]:
         """Everything that has a time, in the order the day runs."""
@@ -153,104 +206,25 @@ class PrayerTimes:
         return {prayer.value: at.strftime("%H:%M") for prayer, at in self.items()}
 
 
-# --------------------------------------------------------------- astronomy
+# ---------------------------------------------------------------- computing
 
 
-def _julian_day(on: date) -> float:
-    year, month = on.year, on.month
-    if month <= 2:
-        year -= 1
-        month += 12
-    a = year // 100
-    b = 2 - a + a // 4
-    return (
-        math.floor(365.25 * (year + 4716)) + math.floor(30.6001 * (month + 1)) + on.day + b - 1524.5
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class _Sun:
-    declination: float
-    equation_of_time: float
-
-
-def _sun(julian_day: float) -> _Sun:
-    """Declination and equation of time, both in the usual units.
-
-    Low-precision formulae from the Astronomical Almanac: good to well under a
-    minute, which is finer than the disagreement between methods and finer than
-    anyone's watch.
-    """
-    days = julian_day - 2451545.0
-
-    # Both angles are reduced to a single turn before anything is done with
-    # them. The sines do not care, but the equation of time below is the mean
-    # longitude *in hours* minus a right ascension already folded into [0, 24) —
-    # so an unreduced longitude makes it hundreds of hours wrong.
-    #
-    # The failure that causes is worth describing, because it hides: every time
-    # of day still came out correct, since the error was very nearly a whole
-    # number of days. Only the date was wrong, by twenty-five of them, and a
-    # timetable printed as HH:MM shows none of that.
-    mean_anomaly = math.radians(_fix_angle(357.529 + 0.98560028 * days))
-    mean_longitude = _fix_angle(280.459 + 0.98564736 * days)
-    apparent_longitude = math.radians(
-        _fix_angle(
-            mean_longitude + 1.915 * math.sin(mean_anomaly) + 0.020 * math.sin(2 * mean_anomaly)
+def _parameters(
+    method: Method, asr: AsrMethod, high_latitude: HighLatitude
+) -> CalculationParameters:
+    """This module's vocabulary, in adhanpy's terms."""
+    if method.adhan_name is None:
+        parameters = CalculationParameters(
+            fajr_angle=method.fajr_angle, isha_angle=method.isha_angle
         )
-    )
-    obliquity = math.radians(23.439 - 0.00000036 * days)
+    else:
+        parameters = CalculationParameters(method=CalculationMethod[method.adhan_name])
 
-    right_ascension = math.degrees(
-        math.atan2(math.cos(obliquity) * math.sin(apparent_longitude), math.cos(apparent_longitude))
-    )
-    declination = math.degrees(math.asin(math.sin(obliquity) * math.sin(apparent_longitude)))
-
-    return _Sun(
-        declination=declination,
-        equation_of_time=(mean_longitude / 15 - _fix_hours(right_ascension / 15)),
-    )
-
-
-def _fix_hours(hours: float) -> float:
-    return hours - 24.0 * math.floor(hours / 24.0)
-
-
-def _fix_angle(degrees: float) -> float:
-    return degrees - 360.0 * math.floor(degrees / 360.0)
-
-
-def _hour_angle(angle: float, latitude: float, declination: float) -> float | None:
-    """Hours between solar noon and the sun being ``angle`` below the horizon.
-
-    ``None`` when the sun never gets there — the case this whole module refuses
-    to guess at.
-    """
-    latitude_r = math.radians(latitude)
-    declination_r = math.radians(declination)
-    numerator = -math.sin(math.radians(angle)) - math.sin(latitude_r) * math.sin(declination_r)
-    denominator = math.cos(latitude_r) * math.cos(declination_r)
-
-    if denominator == 0:
-        return None
-    cosine = numerator / denominator
-    if not -1.0 <= cosine <= 1.0:
-        return None
-    return math.degrees(math.acos(cosine)) / 15.0
-
-
-def _asr_angle(latitude: float, declination: float, shadow_factor: int) -> float:
-    """Where the sun sits when a shadow has grown to ``shadow_factor`` lengths.
-
-    Returned **negated**, because :func:`_hour_angle` is written in terms of how
-    far below the horizon the sun is and this is an altitude above it. Getting
-    that sign wrong is not subtle once you look at the output — Asr came out at
-    20:33, two and a half hours after sunset, and the Hanafi time landed earlier
-    than the standard one instead of an hour later — but it is entirely
-    invisible in the formula.
-    """
-    cotangent = shadow_factor + abs(math.tan(math.radians(latitude - declination)))
-    return -math.degrees(math.atan(1.0 / cotangent))
+    if method.isha_interval_minutes:
+        parameters.isha_interval = method.isha_interval_minutes
+    parameters.madhab = Madhab.HANAFI if asr is AsrMethod.HANAFI else Madhab.SHAFI
+    parameters.high_latitude_rule = HighLatitudeRule[high_latitude.name]
+    return parameters
 
 
 def compute(
@@ -261,6 +235,7 @@ def compute(
     zone: tzinfo,
     method: Method | str = "mwl",
     asr: AsrMethod = AsrMethod.STANDARD,
+    high_latitude: HighLatitude = HighLatitude.MIDDLE_OF_THE_NIGHT,
 ) -> PrayerTimes:
     """One day of prayer times for one place.
 
@@ -273,64 +248,108 @@ def compute(
         raise ValueError(f"longitude {longitude} is not on this planet")
 
     resolved = METHODS[method] if isinstance(method, str) else method
+    parameters = _parameters(resolved, asr, high_latitude)
 
-    # The sun is computed for local noon rather than midnight: the error in the
-    # low-precision formulae is smallest near the moment everything is measured
-    # from, and every time here is an offset from solar noon.
-    offset_hours = _offset_hours(on, zone)
-    julian_day = _julian_day(on) - longitude / 360.0
-    sun = _sun(julian_day)
+    def at(day: date) -> Any:
+        return _AdhanTimes(
+            (latitude, longitude),
+            datetime.combine(day, time(), UTC),
+            calculation_parameters=parameters,
+        )
 
-    # Solar noon, then corrected from mean solar time at this longitude to the
-    # clock the owner actually reads.
-    noon = 12.0 - sun.equation_of_time - longitude / 15.0 + offset_hours
+    try:
+        raw = at(on)
+        # adhanpy anchors on the solar day, which near the date line is not the
+        # civil one. Correcting by local noon rather than by Fajr keeps the whole
+        # set on the day the caller asked about.
+        drift = on - raw.dhuhr.astimezone(zone).date()
+        if drift:
+            raw = at(on + drift)
+        found = {
+            prayer: _to_the_minute(getattr(raw, prayer.value), zone)
+            for prayer in Prayer
+            if getattr(raw, prayer.value, None) is not None
+        }
+    except (ArithmeticError, AttributeError, RuntimeError, TypeError, ValueError) as exc:
+        # Polar day and polar night: no rule produces an answer, so none is
+        # invented. adhanpy signals it with a bare RuntimeError, which is why
+        # that is in the list. The coordinates are deliberately not in the
+        # message.
+        raise PrayerUnavailableError(
+            "no prayer times can be computed for that date and place"
+        ) from exc
 
-    def at(hours: float | None) -> datetime | None:
-        return _moment(on, hours, zone) if hours is not None else None
-
-    sunrise_span = _hour_angle(_HORIZON, latitude, sun.declination)
-    fajr_span = _hour_angle(resolved.fajr_angle, latitude, sun.declination)
-    asr_span = _hour_angle(
-        _asr_angle(latitude, sun.declination, asr.shadow_factor), latitude, sun.declination
-    )
-
-    maghrib = at(noon + sunrise_span) if sunrise_span is not None else None
-
-    isha: datetime | None
-    if resolved.isha_interval_minutes and maghrib is not None:
-        isha = maghrib + timedelta(minutes=resolved.isha_interval_minutes)
-    else:
-        isha_span = _hour_angle(resolved.isha_angle, latitude, sun.declination)
-        isha = at(noon + isha_span) if isha_span is not None else None
+    if Prayer.DHUHR not in found:
+        raise PrayerUnavailableError("no prayer times can be computed for that date and place")
 
     return PrayerTimes(
         on=on,
-        fajr=at(noon - fajr_span) if fajr_span is not None else None,
-        sunrise=at(noon - sunrise_span) if sunrise_span is not None else None,
-        # Dhuhr is a few minutes after astronomical noon by convention, so that
-        # the sun has demonstrably passed the meridian.
-        dhuhr=_moment(on, noon + 1.0 / 60.0, zone),
-        asr=at(noon + asr_span) if asr_span is not None else None,
-        maghrib=maghrib,
-        isha=isha,
+        fajr=found.get(Prayer.FAJR),
+        sunrise=found.get(Prayer.SUNRISE),
+        dhuhr=found[Prayer.DHUHR],
+        asr=found.get(Prayer.ASR),
+        maghrib=found.get(Prayer.MAGHRIB),
+        isha=found.get(Prayer.ISHA),
+        by_rule=_by_convention(on, latitude, longitude, resolved, high_latitude),
     )
 
 
-def _offset_hours(on: date, zone: tzinfo) -> float:
-    """The zone's offset on this date, in hours, DST included."""
-    reference = datetime.combine(on, time(12, 0)).replace(tzinfo=zone)
-    offset = reference.utcoffset()
-    return offset.total_seconds() / 3600.0 if offset else 0.0
+#: Below this latitude the sun reaches every twilight angle on every night of
+#: the year, so no rule can apply and the check below is skipped.
+_RULES_NEVER_APPLY_BELOW = 45.0
+
+#: Two different conventions landing this close together means neither was
+#: needed — the sun itself decided.
+_SAME_ANSWER_WITHIN_S = 120.0
 
 
-def _moment(on: date, hours: float, zone: tzinfo) -> datetime:
-    """Turn "14.37 hours into the day" into a moment, rounded to the minute.
+def _by_convention(
+    on: date,
+    latitude: float,
+    longitude: float,
+    method: Method,
+    high_latitude: HighLatitude,
+) -> tuple[Prayer, ...]:
+    """Which of today's prayers are a rule rather than an observation.
 
-    Seconds are dropped rather than rounded away quietly: nobody reads prayer
-    times to the second, and a displayed 05:59:47 that a reminder treats as
-    06:00 is a discrepancy with no upside.
+    Worth saying out loud. "Fajr is at 00:16" reads as a fact; "Fajr is at 00:16
+    by the middle-of-the-night rule, because the sun never got that far below
+    the horizon" is the truth, and the difference decides whether to trust it.
+
+    Detected by asking for the same day under two *different* conventions: where
+    the sun genuinely reaches the angle both give the same answer, and where it
+    does not they disagree by a great deal.
     """
-    whole = timedelta(hours=hours)
-    start = datetime.combine(on, time(0, 0)).replace(tzinfo=zone)
-    moment = start + whole
-    return moment.replace(second=0, microsecond=0)
+    if abs(latitude) < _RULES_NEVER_APPLY_BELOW:
+        return ()
+
+    moment = datetime.combine(on, time(), UTC)
+    answers = []
+    for rule in (HighLatitudeRule.TWILIGHT_ANGLE, HighLatitudeRule.SEVENTH_OF_THE_NIGHT):
+        parameters = CalculationParameters(
+            fajr_angle=method.fajr_angle, isha_angle=method.isha_angle
+        )
+        parameters.high_latitude_rule = rule
+        try:
+            answers.append(
+                _AdhanTimes((latitude, longitude), moment, calculation_parameters=parameters)
+            )
+        except Exception:
+            return ()
+
+    one, two = answers
+    return tuple(
+        prayer
+        for prayer in (Prayer.FAJR, Prayer.ISHA)
+        if abs((getattr(one, prayer.value) - getattr(two, prayer.value)).total_seconds())
+        > _SAME_ANSWER_WITHIN_S
+    )
+
+
+def _to_the_minute(moment: datetime, zone: tzinfo) -> datetime:
+    """Local time, with the seconds dropped.
+
+    Nobody reads prayer times to the second, and a displayed 05:59:47 that a
+    reminder treats as 06:00 is a discrepancy with no upside.
+    """
+    return moment.astimezone(zone).replace(second=0, microsecond=0)

@@ -22,7 +22,10 @@ from atlas_shared.tools.catalog import CATALOG
 ALMATY = ZoneInfo("Asia/Almaty")
 SETTINGS = PrayerSettings(latitude=43.238, longitude=76.889, zone=ALMATY)
 
-#: 2026-09-15 in Almaty. Dhuhr 11:48, Asr 15:19, Maghrib 18:04, Isha 19:35.
+#: 2026-09-15 in Almaty. Dhuhr 11:49, Asr 15:18, Maghrib 18:03, Isha 19:34.
+#: These moved by a minute when the engine became adhanpy. The two agreed to
+#: within a minute at Almaty across a year, so neither was wrong; these are
+#: simply the numbers the shipped implementation produces.
 TODAY = datetime(2026, 9, 15, 12, 0, tzinfo=ALMATY)
 
 
@@ -35,7 +38,7 @@ class TestTheAnswer:
         result = run_prayer_tool(SETTINGS, TODAY, "prayer.today", {})
 
         assert set(result) >= {"fajr", "sunrise", "dhuhr", "asr", "maghrib", "isha"}
-        assert result["dhuhr"] == "11:48"
+        assert result["dhuhr"] == "11:49"
 
     def test_it_leads_with_the_next_one(self) -> None:
         """What a person actually wants when they ask. Without it the model
@@ -44,8 +47,8 @@ class TestTheAnswer:
 
         assert result["next"]["prayer"] == "asr"
         assert result["next"]["name"] == "Аср"
-        assert result["next"]["at"] == "15:19"
-        assert result["next"]["in_minutes"] == pytest.approx(199, abs=2)
+        assert result["next"]["at"] == "15:18"
+        assert result["next"]["in_minutes"] == pytest.approx(198, abs=2)
 
     def test_after_the_last_prayer_there_is_no_next_one(self) -> None:
         result = run_prayer_tool(SETTINGS, at(23, 0), "prayer.today", {})
@@ -56,7 +59,7 @@ class TestTheAnswer:
         """It ends Fajr rather than beginning anything."""
         result = run_prayer_tool(SETTINGS, at(5, 0), "prayer.today", {})
 
-        assert result["sunrise"] == "05:31"
+        assert result["sunrise"] == "05:32"
         assert result["next"]["prayer"] == "dhuhr"
 
     def test_the_school_changes_the_answer(self) -> None:
@@ -68,20 +71,41 @@ class TestTheAnswer:
         standard_asr = run_prayer_tool(SETTINGS, TODAY, "prayer.today", {})["asr"]
         hanafi_asr = run_prayer_tool(hanafi, TODAY, "prayer.today", {})["asr"]
 
-        assert standard_asr == "15:19"
-        assert hanafi_asr == "16:12"
+        assert standard_asr == "15:18"
+        assert hanafi_asr == "16:11"
 
-    def test_a_night_with_no_twilight_is_named_rather_than_hidden(self) -> None:
-        """A missing Fajr in a Norwegian June is a fact about the sun. Leaving
-        it silently out of the result would let the model imply the day simply
-        has no dawn prayer."""
+    def test_a_time_that_came_from_a_rule_says_so(self) -> None:
+        """In a Norwegian June the sun never reaches the twilight angle, so Fajr
+        and Isha are a scholarly convention rather than an observation. The time
+        is still given - someone there still prays - but the model is told which
+        ones it should not present as astronomy."""
         north = PrayerSettings(latitude=64.0, longitude=11.0, zone=ZoneInfo("Europe/Oslo"))
 
         result = run_prayer_tool(
             north, datetime(2026, 6, 21, 12, tzinfo=ZoneInfo("Europe/Oslo")), "prayer.today", {}
         )
 
-        assert result["not_defined_today"] == ["fajr", "isha"]
+        assert result["by_convention"] == ["fajr", "isha"]
+        assert result["fajr"], "the time itself is still there"
+
+    def test_an_ordinary_day_carries_no_such_warning(self) -> None:
+        """At Almaty no rule is ever needed, so this key must stay absent."""
+        assert "by_convention" not in run_prayer_tool(SETTINGS, TODAY, "prayer.today", {})
+
+    def test_somewhere_no_rule_can_help_is_reported_rather_than_crashing(self) -> None:
+        """Svalbard in December: the sun does not rise, and no convention
+        produces a sunrise."""
+        polar = PrayerSettings(
+            latitude=78.22, longitude=15.65, zone=ZoneInfo("Arctic/Longyearbyen")
+        )
+
+        with pytest.raises(PrayerToolError, match="no prayer times"):
+            run_prayer_tool(
+                polar,
+                datetime(2026, 12, 21, 12, tzinfo=ZoneInfo("Arctic/Longyearbyen")),
+                "prayer.today",
+                {},
+            )
 
     def test_an_unknown_prayer_tool_is_refused_rather_than_crashing(self) -> None:
         with pytest.raises(PrayerToolError, match="not something I can tell you"):
@@ -116,11 +140,11 @@ class TestTheReminder:
     def test_it_arrives_before_the_prayer_not_at_it(self) -> None:
         """A reminder that arrives exactly at Maghrib is a reminder about
         something already happening."""
-        planned = self.decide(at(17, 56))  # Maghrib is 18:04
+        planned = self.decide(at(17, 56))  # Maghrib is 18:03
 
         assert [item.notification.kind for item in planned] == [NotificationKind.PRAYER]
         assert "Магриб" in planned[0].notification.body
-        assert "18:04" in planned[0].notification.body
+        assert "18:03" in planned[0].notification.body
 
     def test_nothing_is_said_at_an_ordinary_moment(self) -> None:
         assert self.decide(at(13, 0)) == []
@@ -129,12 +153,12 @@ class TestTheReminder:
         assert self.decide(at(18, 30)) == []
 
     def test_it_is_spoken(self) -> None:
-        planned = self.decide(at(15, 12))  # Asr is 15:19
+        planned = self.decide(at(15, 12))  # Asr is 15:18
 
         assert planned[0].notification.speak is True
 
     def test_sunrise_earns_no_reminder(self) -> None:
-        """Sunrise at 05:31 - a boundary, not a prayer."""
+        """Sunrise at 05:32 - a boundary, not a prayer."""
         assert self.decide(at(5, 25)) == []
 
     def test_nothing_is_said_to_an_empty_chair(self) -> None:

@@ -25,6 +25,10 @@ dependencies = [
     # machine it is meant to run on. Found by a test, before it was found by
     # the owner.
     "tzdata>=2025.2",
+    # Prayer times. MIT, no runtime dependencies of its own, and checked against
+    # this project's own trigonometry across five cities before the swap: they
+    # agreed to within three minutes everywhere. See prayer/times.py.
+    "adhanpy>=1.0.5",
 ]
 
 [project.scripts]
