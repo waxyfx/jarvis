@@ -1,4 +1,23 @@
-# What is on `main`, and what is taken
+# Coordination
+
+Two agents. **Claude** moves forward from the current state; **Astra** works
+backwards from the end of the roadmap. This file is where they meet.
+
+| | |
+|---|---|
+| Astra's branch | `codex/prayer-personality`, worktree `C:/Users/serik/atlas-codex-prayer-personality` |
+| Last reviewed Astra commit | `32bae94` — merged into main |
+| Claude's NEXT | ad-hoc reminders ("напомни мне через 20 минут"), then push to the phone |
+| Astra's NEXT | unknown; her worktree has an uncommitted `prayer/calculator.py` that is now superseded |
+
+**Superseded:** Astra's `calculator.py` argued for adhanpy over hand-rolled
+trigonometry. The argument was accepted and adhanpy now sits behind the existing
+`prayer.times.compute()`, so the tool, the reminder rule and fifty-one tests
+carried over unchanged. Her standalone adapter is not needed; her high-latitude
+handling was taken.
+
+---
+
 
 For the second agent, and for anyone picking this up mid-flight. Written by the
 integrator after merging `codex/prayer-personality`.
@@ -46,38 +65,13 @@ any of it:
 | Launcher | `start-jarvis.bat`, `scripts/start_jarvis.ps1` | Database, backend, agent, in order |
 | Dispatcher, catalogue, config, orchestrator, `main.py` | | Actively edited; coordinate before touching |
 
-## About `calculator.py`
+## Done since: the prayer engine
 
-Your worktree has an uncommitted `prayer/calculator.py` using **adhanpy**. That
-is very likely the better engineering choice, and this is not a request to drop
-it.
-
-`prayer/times.py` on `main` is about two hundred lines of hand-rolled
-trigonometry. Two real bugs were found in it, both by tests: an Asr angle with
-the wrong sign, which put Asr two and a half hours after sunset; and an
-unreduced solar longitude, which computed every time for a date twenty-five days
-away while every *time of day* still looked correct. A maintained library has
-had those found years ago.
-
-So if adhanpy holds up, the clean move is **not** a third implementation. Keep
-`compute()`'s signature and replace what is behind it:
-
-```python
-def compute(
-    on: date, *, latitude: float, longitude: float, zone: tzinfo,
-    method: Method | str = "mwl", asr: AsrMethod = AsrMethod.STANDARD,
-) -> PrayerTimes: ...
-```
-
-`prayer.today`, the reminder rule in `notify/rules.py`, and 51 tests already pin
-the behaviour — including the twelve-hour equinox, the three-hour equinox Asr,
-the Hanafi gap, the absent Fajr at 64°N, and that the returned datetimes fall on
-the requested date. A swap that keeps those green is a verifiable improvement
-rather than a rewrite, and the diff would be one file.
-
-One thing to preserve if you do: **`None` for a prayer the sun never reaches**.
-Far enough north there are summer nights where every published time is a
-convention, and absent is the only claim that is true.
+adhanpy shipped, behind the existing `compute()`. Five cities and four
+solstice/equinox dates showed the two implementations agreeing to within three
+minutes everywhere, so the swap cost nothing and dropped two hundred lines that
+had already produced two bugs. Recorded in
+`docs/measurements/prayer-engine-comparison.json`.
 
 ## Still open, and not started by either of us
 
@@ -86,7 +80,10 @@ convention, and absent is the only claim that is true.
 - Kazakh: `Language.KK` exists and passes through the personality layer
   untouched by design; the voice stack has no Kazakh model.
 - Memory and personalisation, presence and posture, web protection.
-- iPhone and remote control: blocked on hardware, not on code.
+- Remote control: blocked on nothing but a security review, which has to come
+  first — a phone that can move the mouse is a different threat model.
+- Push to the phone: `server.notify` already exists and is signed; APNs needs a
+  paid Apple account.
 
 ## Needs the owner, not us
 
