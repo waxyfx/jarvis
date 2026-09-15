@@ -8,12 +8,15 @@ it.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
 
 from atlas_backend.notify.rules import Moment, Schedule, decide_all
+from atlas_backend.prayer.schedule import OBLIGATORY
 from atlas_backend.prayer.times import AsrMethod, compute
 from atlas_backend.prayer.tools import PrayerSettings, PrayerToolError, run_prayer_tool
 from atlas_shared.enums import NotificationKind
@@ -205,3 +208,90 @@ class TestTheReminder:
 
         assert asr[0].key.startswith("prayer:asr:")
         assert maghrib[0].key.startswith("prayer:maghrib:")
+
+
+class TestASuppliedTimetableWins:
+    """The calculation is this code's approximation of somebody's convention.
+
+    A timetable published by the authority the owner actually follows *is* the
+    convention. Where both exist there is no contest — and the answer says which
+    one it came from, because "computed" and "from your mosque" are different
+    claims and the owner should be able to tell them apart.
+    """
+
+    @staticmethod
+    def timetable(day: str = "2026-09-15", fajr: str = "03:00") -> Any:
+        from atlas_backend.prayer.schedule import load_timetable
+
+        times = (fajr, "12:00", "16:00", "18:00", "20:00")
+        return load_timetable(
+            json.dumps(
+                {
+                    "locality": "Almaty",
+                    "timezone": "Asia/Almaty",
+                    "source": "Test fixture, not for worship",
+                    "method": "Explicit test times",
+                    "revision": "test-v1",
+                    "days": [
+                        {
+                            "day": day,
+                            "times": [
+                                {"prayer": prayer.value, "at": f"{day}T{hour}:00+05:00"}
+                                for prayer, hour in zip(OBLIGATORY, times, strict=True)
+                            ],
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+    def settings_with(self, **kwargs: Any) -> PrayerSettings:
+        return PrayerSettings(latitude=43.238, longitude=76.889, zone=ALMATY, **kwargs)
+
+    def test_the_timetable_is_used_for_a_day_it_covers(self) -> None:
+        answer = run_prayer_tool(
+            self.settings_with(timetable=self.timetable()), TODAY, "prayer.today", {}
+        )
+
+        assert answer["fajr"] == "03:00"
+        assert answer["source"] == "timetable"
+
+    def test_a_day_it_does_not_cover_falls_back_to_the_calculation(self) -> None:
+        """A timetable that ran out in the spring must not take prayer times
+        down with it in the autumn.
+
+        The date is 2026 rather than something older on purpose: the validator
+        checks the UTC offset against the zone for that day, and Kazakhstan was
+        +06:00 until March 2024 — so a fixture dated 2020 with +05:00 is
+        genuinely invalid, and it said so."""
+        answer = run_prayer_tool(
+            self.settings_with(timetable=self.timetable(day="2026-01-01", fajr="01:00")),
+            TODAY,
+            "prayer.today",
+            {},
+        )
+
+        assert answer["fajr"] == "03:54"
+
+    def test_without_one_the_answer_says_it_was_calculated(self) -> None:
+        answer = run_prayer_tool(self.settings_with(), TODAY, "prayer.today", {})
+
+        assert answer["source"] == "calculated"
+
+    def test_sunrise_is_absent_rather_than_mixed_in(self) -> None:
+        """A published timetable lists the five. Computing sunrise and slipping
+        it into the same answer would give one reply two provenances."""
+        answer = run_prayer_tool(
+            self.settings_with(timetable=self.timetable()), TODAY, "prayer.today", {}
+        )
+
+        assert "sunrise" not in answer
+        assert answer["dhuhr"] == "12:00"
+
+    def test_the_next_prayer_comes_from_the_timetable_too(self) -> None:
+        answer = run_prayer_tool(
+            self.settings_with(timetable=self.timetable()), at(13, 0), "prayer.today", {}
+        )
+
+        assert answer["next"]["at"] == "16:00"

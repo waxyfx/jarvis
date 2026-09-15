@@ -197,6 +197,14 @@ class Settings(BaseSettings):
     #: How long before each prayer to say something. Zero switches the
     #: reminders off while leaving the question answerable.
     prayer_reminder_minutes: int = Field(default=10, ge=0, le=60)
+    #: A timetable the owner supplied, as JSON. When it covers the day, it wins
+    #: over the calculation: the computation is this code's approximation of
+    #: somebody's convention, and a published timetable *is* the convention, from
+    #: the authority the owner actually follows. See docs/PRAYER-SCHEDULE.md.
+    #:
+    #: A path, read once at startup. Not a URL: nothing here fetches a timetable,
+    #: and a model must never be able to name the file.
+    prayer_timetable_path: str = ""
 
     # --------------------------------------------------- personality (M5)
     #: How replies are worded, once everything about *what* they say has been

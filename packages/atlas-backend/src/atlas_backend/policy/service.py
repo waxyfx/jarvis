@@ -460,7 +460,30 @@ def prayer_settings_from(settings: Settings) -> PrayerSettings | None:
         zone=_zone(settings.owner_timezone),
         method=settings.prayer_method,
         asr=AsrMethod(settings.prayer_asr),
+        timetable=_timetable(settings.prayer_timetable_path),
     )
+
+
+def _timetable(path: str) -> Any:
+    """The owner's own timetable, if they pointed at one that parses.
+
+    A bad file must not stop the backend: prayer times fall back to the
+    calculation, which is a working answer, and the log says which file and
+    why. Refusing to start would take every other feature down over an optional
+    one.
+    """
+    if not path:
+        return None
+
+    from pathlib import Path
+
+    from atlas_backend.prayer.schedule import InvalidTimetableError, load_timetable
+
+    try:
+        return load_timetable(Path(path).read_bytes())
+    except (OSError, InvalidTimetableError) as exc:
+        log.warning("prayer_timetable_unusable", path=path, error=str(exc))
+        return None
 
 
 def _zone(name: str) -> Any:

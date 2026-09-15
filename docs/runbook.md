@@ -441,12 +441,20 @@ kilometres, which moves Maghrib by twenty minutes.
 | `ATLAS_PRAYER_METHOD` | `mwl` | `mwl`, `isna`, `egypt`, `makkah`, `karachi`, `tehran`, `dubai`, `qatar`, `kuwait`, `singapore` |
 | `ATLAS_PRAYER_ASR` | `standard` | `hanafi` is about an hour later |
 | `ATLAS_PRAYER_REMINDER_MINUTES` | `10` | Minutes before each prayer. `0` keeps the times answerable and stops the reminders |
+| `ATLAS_PRAYER_TIMETABLE_PATH` | unset | Your mosque's own timetable as JSON. Wins for every day it covers |
 
 Computed on this machine, never fetched: a free API would carry the owner's
 coordinates and the fact that they pray to a third party, daily, for a page of
 trigonometry. It also works with the internet down.
 
-**Check one day against your own mosque before trusting it.** Sunrise and sunset
+If your mosque publishes a timetable, use it instead: point
+`ATLAS_PRAYER_TIMETABLE_PATH` at a JSON file in the format described in
+[PRAYER-SCHEDULE.md](PRAYER-SCHEDULE.md). It wins for every day it covers and
+falls back to the calculation for days it does not, so a file that runs out
+in December does not take prayer times down with it in January. The answer
+says which one it came from.
+
+**Otherwise, check one day against your own mosque before trusting it.** Sunrise and sunset
 are astronomy and have one right answer; Fajr and Isha depend on which authority
 you follow, and the methods above disagree by twenty minutes or more at this
 latitude. If everything is consistently out by the same amount, it is the
