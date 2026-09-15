@@ -171,6 +171,23 @@ def run_sql(statement: str, **params: object) -> None:
     asyncio.run(_go())
 
 
+async def insert_rows(statement: str, rows: list[dict[str, object]]) -> None:
+    """Insert many rows over one connection, from inside a running event loop.
+
+    Two things `run_sql` cannot do. It calls ``asyncio.run``, so an async test
+    cannot use it at all; and it opens an engine per statement, which turns a
+    day of ten-second activity samples into several hundred connections.
+    """
+    engine = create_async_engine(
+        TEST_DATABASE_URL, isolation_level="AUTOCOMMIT", poolclass=NullPool
+    )
+    try:
+        async with engine.connect() as connection:
+            await connection.execute(text(statement), rows)
+    finally:
+        await engine.dispose()
+
+
 def fetch_sql(statement: str, **params: object) -> list[tuple[object, ...]]:
     async def _go() -> list[tuple[object, ...]]:
         engine = create_async_engine(

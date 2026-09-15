@@ -125,3 +125,33 @@ class CaptureScope(StrEnum):
     WINDOW = "window"
     MONITOR = "monitor"
     DESKTOP = "desktop"
+
+
+class NotificationKind(StrEnum):
+    """Why the assistant spoke first.
+
+    Not cosmetic: the agent decides how to deliver a notification partly from
+    this, and the audit trail records it, so "it reminded me about a task" and
+    "it told me to stand up" stay distinguishable a week later.
+    """
+
+    #: Something on the tracker is about to start, or is overdue.
+    REMINDER = "reminder"
+    #: What the day holds, said once in the morning.
+    BRIEFING = "briefing"
+    #: What the day held, said once in the evening.
+    SUMMARY = "summary"
+    #: Hours at the desk without a break.
+    WELLNESS = "wellness"
+
+
+class NotificationPriority(StrEnum):
+    """How much of the owner's attention this is worth interrupting.
+
+    LOW is shown and not spoken. A voice in the room is the most intrusive
+    thing this system does, and most of what it has to say does not earn it.
+    """
+
+    LOW = "low"
+    NORMAL = "normal"
+    HIGH = "high"

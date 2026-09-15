@@ -28,6 +28,7 @@ from atlas_agent.config import AgentSettings
 from atlas_agent.identity import DeviceIdentity
 from atlas_agent.logging import get_logger
 from atlas_agent.monitor import ActivityMonitor
+from atlas_agent.notifications import NotificationDelivery
 from atlas_agent.runner import ToolRunner
 from atlas_agent.safety.mode import ModeChangeSource, SafeModeController
 from atlas_shared.enums import AgentMode, RefusalReason, ToolStatus
@@ -42,6 +43,7 @@ from atlas_shared.protocol.messages import (
     ErrorPayload,
     HelloAck,
     ModeChanged,
+    Notify,
     ParsedMessage,
     SystemTelemetry,
     ToolExecute,
@@ -86,6 +88,7 @@ class AgentTransport:
         monitor: ActivityMonitor | None = None,
         capabilities: tuple[str, ...] = (),
         on_message: MessageHandler | None = None,
+        notifications: NotificationDelivery | None = None,
     ) -> None:
         self._settings = settings
         self._identity = identity
@@ -94,6 +97,9 @@ class AgentTransport:
         self._monitor = monitor
         self._capabilities = capabilities
         self._on_message = on_message
+        #: Absent when the agent runs headless. A notification then has nowhere
+        #: to go, which is logged rather than queued — see notifications.py.
+        self._notifications = notifications
         self._backend = BackendClient(settings)
         self._connected = asyncio.Event()
         # Deliberately owned by the transport, not by a connection: a command
@@ -356,6 +362,16 @@ class AgentTransport:
 
         if isinstance(payload, ToolExecute):
             await self._execute(payload, parsed, websocket)
+            return
+
+        if isinstance(payload, Notify):
+            # Nothing is sent back. A notification is not a command with an
+            # outcome: the backend has already recorded that it said something,
+            # and a delivery receipt would be one more message for no decision.
+            if self._notifications is None:
+                log.info("agent_notification_undeliverable", kind=payload.kind.value)
+                return
+            await self._notifications.deliver(payload)
             return
 
         log.info("agent_unhandled_signed_message", type=parsed.envelope.type)

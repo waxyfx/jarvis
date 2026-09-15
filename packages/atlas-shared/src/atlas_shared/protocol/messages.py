@@ -22,6 +22,8 @@ from atlas_shared.enums import (
     AgentMode,
     DeviceKind,
     MessageKind,
+    NotificationKind,
+    NotificationPriority,
     RefusalReason,
     RiskLevel,
     ToolStatus,
@@ -43,6 +45,7 @@ __all__ = [
     "HelloAck",
     "MessageSpec",
     "ModeChanged",
+    "Notify",
     "ParsedMessage",
     "SystemTelemetry",
     "ToolCancel",
@@ -241,6 +244,43 @@ class EnterSafeMode(_Payload):
     """
 
     reason: str
+
+
+# --------------------------------------------------------------------------
+# Speaking first (M5)
+#
+# Everything above happens because the owner asked. This is the one direction
+# that does not: a reminder, a briefing, a warning that they have been at the
+# desk for three hours. The assistant starts the conversation.
+#
+# Signed, like a command, and for a related reason. A notification is not an
+# action on the machine, but it *is* a sentence spoken in the owner's room in
+# the assistant's voice, and an unsigned channel for that is a channel for
+# telling them their bank called. Cheap to sign, and the machinery is already
+# here.
+# --------------------------------------------------------------------------
+
+
+@register("server.notify", MessageKind.CMD, signature_required=True)
+class Notify(_Payload):
+    """Something the assistant decided to say without being asked.
+
+    ``body`` is what gets spoken, so it is written as speech rather than as a
+    notification: one or two sentences, no bullet points, no markup.
+    """
+
+    #: Stable across a retry, so the agent can recognise one it has already
+    #: delivered rather than saying it twice after a reconnect.
+    notification_id: str
+    kind: NotificationKind
+    priority: NotificationPriority = NotificationPriority.NORMAL
+    #: Shown, not spoken. A few words.
+    title: str = Field(min_length=1, max_length=120)
+    #: Spoken, and shown.
+    body: str = Field(min_length=1, max_length=600)
+    #: Whether to say it out loud. False means show it and stay quiet — which is
+    #: what a low-priority notification does while the owner is in a meeting.
+    speak: bool = True
 
 
 # --------------------------------------------------------------------------

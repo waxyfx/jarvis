@@ -92,6 +92,16 @@ class AuditEvent(StrEnum):
     MODEL_PROPOSAL_REJECTED = "assistant.model_proposal_rejected"
     AI_BUDGET_EXHAUSTED = "assistant.budget_exhausted"
 
+    # Speaking first (M5). The one direction the owner did not start, so "why
+    # did it tell me that" needs an answer. The *body* is deliberately not
+    # recorded: this log is readable from the iPhone Settings screen, and the
+    # rule here has always been identifiers and decisions, not transcripts.
+    NOTIFICATION_SENT = "notification.sent"
+    #: Decided, then not said — the machine was offline, or the owner had asked
+    #: for quiet. Recorded because a reminder that never arrived is exactly the
+    #: thing someone will later ask about.
+    NOTIFICATION_SUPPRESSED = "notification.suppressed"
+
 
 def compute_entry_hash(
     *,

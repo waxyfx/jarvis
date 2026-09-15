@@ -22,6 +22,7 @@ from atlas_backend.config import Settings, get_settings
 from atlas_backend.db.session import Database
 from atlas_backend.errors import install_exception_handlers
 from atlas_backend.logging import configure_logging, get_logger
+from atlas_backend.notify import Notifier, ProactiveScheduler
 from atlas_backend.policy import ToolDispatcher
 from atlas_backend.ratelimit import SlidingWindowLimiter
 from atlas_backend.server_identity import ServerIdentity
@@ -92,11 +93,12 @@ def create_app(
         app.state.challenge_service = ChallengeService(resolved)
         app.state.pairing_service = PairingService(resolved)
         app.state.hub = Hub()
+        resolved_tracker = tracker or _build_tracker(resolved)
         app.state.dispatcher = ToolDispatcher(
             hub=app.state.hub,
             server_identity=app.state.server_identity,
             settings=resolved,
-            tracker=tracker or _build_tracker(resolved),
+            tracker=resolved_tracker,
             web=web,
         )
         app.state.pairing_limiter = SlidingWindowLimiter(
@@ -105,6 +107,25 @@ def create_app(
         app.state.auth_limiter = SlidingWindowLimiter(
             limit=resolved.pairing_rate_limit_per_minute, window_s=60.0
         )
+
+        app.state.notifier = Notifier(
+            hub=app.state.hub,
+            server_identity=app.state.server_identity,
+            database=app.state.database,
+        )
+        app.state.scheduler = (
+            ProactiveScheduler(
+                hub=app.state.hub,
+                notifier=app.state.notifier,
+                database=app.state.database,
+                settings=resolved,
+                tracker=resolved_tracker,
+            )
+            if resolved.proactive_enabled
+            else None
+        )
+        if app.state.scheduler is not None:
+            app.state.scheduler.start()
 
         provider = ai_provider
         if provider is None and resolved.gemini_api_key is not None:
@@ -128,6 +149,8 @@ def create_app(
         try:
             yield
         finally:
+            if app.state.scheduler is not None:
+                await app.state.scheduler.stop()
             closed = await app.state.hub.close_all()
             await app.state.database.dispose()
             log.info("backend_stopped", connections_closed=closed)

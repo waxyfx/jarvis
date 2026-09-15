@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     #: The owner record is created on the first bootstrap pairing, from these.
     owner_display_name: str = "Owner"
     owner_language: str = "ru"
+    #: Load-bearing since M5: everything the proactive rules decide is in local
+    #: time — "today", "this morning", "after nine in the evening" — and UTC
+    #: would put the morning briefing in the middle of the night.
     owner_timezone: str = "Asia/Almaty"
 
     #: SQLAlchemy async DSN, e.g. postgresql+asyncpg://user:pass@host:5432/atlas
@@ -131,6 +134,33 @@ class Settings(BaseSettings):
     #: outward at all, and turning it off removes the web tools from what the
     #: model is offered rather than letting it call them and be refused.
     web_tools_enabled: bool = True
+
+    # ------------------------------------------------- speaking first (M5)
+    #: Whether the assistant may start a conversation: reminders, the morning
+    #: briefing, the evening summary, a nudge after three hours at the desk.
+    #:
+    #: On by default, because an assistant that only answers when spoken to is
+    #: half of what was asked for. Off is a single flag, because the failure
+    #: mode of this feature is being annoying, and someone who finds it annoying
+    #: should not have to hunt.
+    proactive_enabled: bool = True
+    #: How often the rules get a chance to fire. A minute is the resolution of
+    #: "remind me fifteen minutes before", and there is nothing here worth
+    #: knowing sooner.
+    proactive_interval_s: float = Field(default=60.0, ge=10.0, le=3600.0)
+
+    #: Windows, not thresholds — see atlas_backend/notify/rules.py. Sitting
+    #: down at four in the afternoon should not produce a morning briefing.
+    briefing_hour: int = Field(default=8, ge=0, le=23)
+    briefing_until_hour: int = Field(default=12, ge=1, le=24)
+    evening_summary_hour: int = Field(default=21, ge=0, le=23)
+    evening_summary_until_hour: int = Field(default=23, ge=1, le=24)
+    long_session_minutes: int = Field(default=90, ge=20, le=480)
+    #: Outside these hours a notification is shown but not spoken. See
+    #: atlas_backend/notify/rules.py for why that is a downgrade rather than a
+    #: filter.
+    quiet_from_hour: int = Field(default=23, ge=0, le=23)
+    quiet_until_hour: int = Field(default=7, ge=0, le=23)
     ai_request_timeout_s: float = Field(default=30.0, gt=1.0, le=300.0)
     #: Retries for transient upstream failures (429, 5xx). A rate limit is a
     #: "wait a moment", not a "cannot do that" — telling the user the model is
