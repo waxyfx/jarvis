@@ -763,3 +763,106 @@ CATALOG.register(
         rate_limit_per_minute=20,
     )
 )
+
+
+# --------------------------------------------------------------------------
+# reminders
+#
+# "Напомни мне через двадцать минут" — a thought the owner does not want to
+# carry, delivered by the same proactive loop as everything else, so quiet
+# hours, presence and SAFE MODE apply without a second set of rules.
+#
+# Deliberately not the tracker. A task belongs in a system the owner maintains
+# and looks at; putting every passing thought there fills it with things to
+# tidy up afterwards.
+#
+# All LOW. Setting one is additive and expires by itself; cancelling one throws
+# away something the owner asked for and would have to ask for again, which is
+# an inconvenience rather than a loss. Neither is worth a confirmation step in
+# the middle of a sentence.
+# --------------------------------------------------------------------------
+
+
+class ReminderSetArgs(_Args):
+    text: str = Field(
+        min_length=1,
+        max_length=300,
+        description="What to say back to them, in their own words where possible.",
+    )
+    in_minutes: int | None = Field(
+        default=None,
+        ge=1,
+        le=10080,
+        description=(
+            "Minutes from now. Use this for 'через двадцать минут', 'in an hour'. "
+            "Exactly one of in_minutes or at."
+        ),
+    )
+    at: str | None = Field(
+        default=None,
+        max_length=40,
+        description=(
+            "An absolute moment, ISO 8601 with an offset, for 'в шесть вечера'. "
+            "Exactly one of in_minutes or at."
+        ),
+    )
+
+
+CATALOG.register(
+    ToolManifest(
+        name="reminder.set",
+        version=1,
+        summary="Remind the owner of something at a time they name.",
+        args_model=ReminderSetArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=10.0,
+        runs_on="backend",
+        requires_capabilities=("reminders",),
+        rate_limit_per_minute=20,
+    )
+)
+
+
+class ReminderListArgs(_Args):
+    """No arguments: what is still waiting to be said."""
+
+
+CATALOG.register(
+    ToolManifest(
+        name="reminder.list",
+        version=1,
+        summary="Reminders that have not gone off yet.",
+        args_model=ReminderListArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=True,
+        timeout_s=10.0,
+        runs_on="backend",
+        requires_capabilities=("reminders",),
+        rate_limit_per_minute=20,
+    )
+)
+
+
+class ReminderCancelArgs(_Args):
+    reminder_id: str = Field(
+        min_length=1,
+        max_length=64,
+        description="An id from reminder.list. Never invent one.",
+    )
+
+
+CATALOG.register(
+    ToolManifest(
+        name="reminder.cancel",
+        version=1,
+        summary="Drop a reminder before it goes off.",
+        args_model=ReminderCancelArgs,
+        base_risk=RiskLevel.LOW,
+        reversible=False,
+        timeout_s=10.0,
+        runs_on="backend",
+        requires_capabilities=("reminders",),
+        rate_limit_per_minute=20,
+    )
+)

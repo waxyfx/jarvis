@@ -37,6 +37,11 @@ from atlas_backend.prayer.tools import (
     PrayerToolError,
     run_prayer_tool,
 )
+from atlas_backend.reminders.tools import (
+    REMINDER_TOOLS,
+    ReminderToolError,
+    run_reminder_tool,
+)
 from atlas_backend.server_identity import ServerIdentity
 from atlas_backend.tracker.provider import (
     TrackerError,
@@ -219,7 +224,13 @@ class ToolDispatcher:
         started = time.monotonic()
         try:
             result = await self._run_backend_tool(session, call)
-        except (TrackerError, WebToolError, ActivityToolError, PrayerToolError) as exc:
+        except (
+            TrackerError,
+            WebToolError,
+            ActivityToolError,
+            PrayerToolError,
+            ReminderToolError,
+        ) as exc:
             call.status = CallStatus.COMPLETED
             call.completed_at = utc_now()
             call.duration_ms = int((time.monotonic() - started) * 1000)
@@ -260,6 +271,16 @@ class ToolDispatcher:
         name was in the catalogue before it got here, so this chooses between
         known things rather than parsing one.
         """
+        if call.tool_name in REMINDER_TOOLS:
+            # The only backend family that writes to this database, so it
+            # takes the session the dispatcher is already inside.
+            device = await session.get(Device, call.device_id)
+            if device is None:
+                raise ReminderToolError("that machine is not registered")
+            return await run_reminder_tool(
+                session, device.user_id, call.device_id, call.tool_name, call.args
+            )
+
         if call.tool_name in PRAYER_TOOLS:
             if self._prayer is None:
                 raise PrayerToolError("I do not know where you are")

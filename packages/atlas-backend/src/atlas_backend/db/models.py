@@ -43,6 +43,7 @@ __all__ = [
     "Message",
     "PairingCode",
     "PermissionOverrideRow",
+    "Reminder",
     "SystemTelemetryRow",
     "ToolCall",
     "User",
@@ -346,3 +347,38 @@ class AuditLog(Base):
     hash: Mapped[bytes] = mapped_column(LargeBinary(32))
     #: Position in the chain, independent of the database-assigned seq.
     chain_index: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Reminder(Base):
+    """Something the owner asked to be reminded of, at a time they chose.
+
+    Distinct from a tracker task on purpose. A task is work with a place in a
+    system the owner maintains; this is "напомни мне через двадцать минут", which
+    is a thought they do not want to hold. Putting those in the tracker would
+    fill it with noise that has to be tidied later.
+
+    Delivered by the same proactive loop as everything else, so quiet hours,
+    presence and SAFE MODE all apply without a second set of rules.
+    """
+
+    __tablename__ = "reminders"
+    __table_args__ = (
+        # The scheduler asks "what is due and undelivered" every minute, and
+        # that is the only query shape this table has.
+        Index("ix_reminders_due", "due_at", "delivered_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    #: Which machine asked. Also where it is delivered, unless that machine is
+    #: gone by then.
+    device_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+
+    text: Mapped[str] = mapped_column(String(300))
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    #: Set when it has been said. Never cleared: a reminder delivered twice is
+    #: worse than one delivered late.
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

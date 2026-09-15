@@ -81,6 +81,9 @@ class Moment:
     #: configured, which the rules treat as "nothing to say" rather than as an
     #: error.
     tasks: Sequence[Task] = ()
+    #: Reminders that are due now and have not been said. Already filtered
+    #: by the scheduler, because the query is a database question.
+    due_reminders: Sequence[tuple[str, str]] = ()
     #: Today's prayer times, when the owner has configured a location.
     #: Absent is the normal state and means the rule has nothing to say.
     prayers: PrayerTimes | None = None
@@ -309,6 +312,31 @@ def _long_session(moment: Moment, schedule: Schedule) -> list[Planned]:
     ]
 
 
+def _reminder_due(moment: Moment, schedule: Schedule) -> list[Planned]:
+    """Something the owner asked to be told, at the time they asked.
+
+    Said whether or not they are at the machine. Every other rule here checks
+    presence first, because a briefing to an empty room is a briefing wasted —
+    but this one was requested for a moment, and going quiet because nobody
+    happened to be at the desk is exactly the failure that makes someone stop
+    trusting reminders.
+    """
+    return [
+        Planned(
+            key=f"reminder:{identifier}",
+            notification=_notify(
+                NotificationKind.REMINDER,
+                "Напоминание",
+                f"Вы просили напомнить: {text}",
+                now=moment.now,
+                schedule=schedule,
+                priority=NotificationPriority.HIGH,
+            ),
+        )
+        for identifier, text in moment.due_reminders
+    ]
+
+
 def _prayer_due(moment: Moment, schedule: Schedule) -> list[Planned]:
     """A few minutes before each prayer.
 
@@ -355,7 +383,14 @@ def _count(total: int) -> str:
 
 #: In the order they would be said if several were due at once, which is also
 #: the order of how much they matter.
-RULES = (_prayer_due, _due_soon, _morning_briefing, _long_session, _evening_summary)
+RULES = (
+    _reminder_due,
+    _prayer_due,
+    _due_soon,
+    _morning_briefing,
+    _long_session,
+    _evening_summary,
+)
 
 
 def decide_all(moment: Moment, schedule: Schedule, *, already_said: set[str]) -> list[Planned]:

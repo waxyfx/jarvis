@@ -25,9 +25,12 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from sqlalchemy import select
+
 from atlas_backend.activity.store import samples_between, start_of_day
 from atlas_backend.activity.summary import ActivityDigest, Sample, summarise
 from atlas_backend.config import Settings
+from atlas_backend.db.models import Reminder
 from atlas_backend.db.session import Database
 from atlas_backend.logging import get_logger
 from atlas_backend.notify.notifier import Notifier
@@ -46,6 +49,11 @@ log = get_logger(__name__)
 #: present. Two sampling intervals, so one dropped batch is not read as an
 #: empty chair.
 _PRESENT_WITHIN_S = 30.0
+
+#: Reminders delivered in one tick. A backend that was down for a day comes
+#: back to a pile of them, and saying forty things in a row is not a
+#: reminder — it is a reason to switch this off.
+_MOST_AT_ONCE = 3
 
 
 class ProactiveScheduler:
@@ -159,6 +167,7 @@ class ProactiveScheduler:
         moment = Moment(
             now=now,
             tasks=await self._tasks(),
+            due_reminders=await self._due_reminders(device_id, now),
             prayers=self._prayer.times(now) if self._prayer is not None else None,
             activity=activity,
             present=present,
@@ -174,6 +183,33 @@ class ProactiveScheduler:
             if await self._notifier.send(device_id, planned.notification):
                 sent += 1
         return sent
+
+    async def _due_reminders(self, device_id: uuid.UUID, now: datetime) -> list[tuple[str, str]]:
+        """What the owner asked to be told, that is due and not yet said.
+
+        Marked delivered in the same transaction that reads it. The alternative
+        — mark after the notification is sent — loses a reminder when the send
+        fails and repeats one when it half-succeeds, and of those two a reminder
+        that arrives once and might be missed beats one that arrives eleven
+        times.
+        """
+        async with self._database.transaction() as session:
+            rows = await session.execute(
+                select(Reminder)
+                .where(
+                    Reminder.device_id == device_id,
+                    Reminder.due_at <= now,
+                    Reminder.delivered_at.is_(None),
+                    Reminder.cancelled_at.is_(None),
+                )
+                .order_by(Reminder.due_at)
+                .limit(_MOST_AT_ONCE)
+            )
+            due = list(rows.scalars())
+            for reminder in due:
+                reminder.delivered_at = now
+
+        return [(str(reminder.id), reminder.text) for reminder in due]
 
     async def _tasks(self) -> Sequence[Task]:
         if self._tracker is None:
