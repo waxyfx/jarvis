@@ -87,9 +87,17 @@ Last updated: 2026-09-15 (evening).
 | Push notifications | not started | — | Apple developer account |
 | Remote screen, touchpad | not started | — | after the app |
 
-## 8. Not started, not blocked
+## 8. What is left
 
-Kazakh · web protection · presence and posture.
+| | Why it is not being built |
+|---|---|
+| Push to the phone | Paid Apple developer account, APNs key |
+| Remote screen, touchpad | Needs a security review first — that review *is* the work |
+| Camera presence and posture | A camera in the owner's room is their decision, not this code's |
+| Web protection | Named in the roadmap and specified nowhere; building to fit a name is guessing |
+
+Kazakh is done: `kk_KZ-issai-high`, the wake acknowledgement, and a recogniser
+prompt of its own.
 
 ---
 

@@ -6,9 +6,9 @@ backwards from the end of the roadmap. This file is where they meet.
 | | |
 |---|---|
 | Astra's branch | `codex/prayer-personality`, worktree `C:/Users/serik/atlas-codex-prayer-personality` |
-| Last reviewed Astra commit | `32bae94` — merged into main |
-| Claude's NEXT | Kazakh, or web protection — reminders, memory, overview and the iOS source are done |
-| Astra's NEXT | unknown; her worktree has an uncommitted `prayer/calculator.py` that is now superseded |
+| Last reviewed Astra commit | `650eb4a` — reviewed, nothing to merge: she labelled it an archive checkpoint, superseded on main |
+| Claude's NEXT | everything forward of here is blocked or unspecified — see the bottom of this file |
+| Astra's NEXT | unknown. Her calculator is archived on her branch and needs no action |
 
 **Superseded:** Astra's `calculator.py` argued for adhanpy over hand-rolled
 trigonometry. The argument was accepted and adhanpy now sits behind the existing
@@ -77,6 +77,29 @@ solstice/equinox dates showed the two implementations agreeing to within three
 minutes everywhere, so the swap cost nothing and dropped two hundred lines that
 had already produced two bugs. Recorded in
 `docs/measurements/prayer-engine-comparison.json`.
+
+## Where the forward direction runs out
+
+Everything left on the roadmap is one of three things, and saying which matters
+more than picking one at random:
+
+**Blocked on hardware or an account.** Push notifications need a paid Apple
+developer account and an APNs key. Building and running the iOS app needs a Mac.
+The always-on backend needs a host.
+
+**Blocked on a decision that is the owner's.** Camera-based presence and posture
+is the clearest: it is a camera, in their room, and no amount of local-only
+processing makes that a choice this code should make on their behalf.
+
+**Not specified anywhere.** "Web Protection" appears in the roadmap as a name
+and nowhere else — not in the architecture, not in any milestone document.
+Building something to fit the name would be guessing at requirements, and the
+guess would be wrong in ways nobody could correct without rewriting it.
+
+Remote control is a fourth case: not blocked, but it needs a security review
+before a line is written. A phone that can move the mouse on a machine is a
+different threat model from one that can ask questions, and the review is the
+work, not a formality before it.
 
 ## Still open, and not started by either of us
 
