@@ -13,9 +13,7 @@ from zoneinfo import ZoneInfo
 from atlas_backend.prayer import load_timetable
 
 timetable = load_timetable(document_bytes)  # application supplies bytes
-today = timetable.for_day(datetime.now(UTC).astimezone(
-    ZoneInfo(timetable.timezone)
-).date())
+today = timetable.for_day(datetime.now(UTC).astimezone(ZoneInfo(timetable.timezone)).date())
 next_time = timetable.next_prayer(now=datetime.now(UTC))
 ```
 

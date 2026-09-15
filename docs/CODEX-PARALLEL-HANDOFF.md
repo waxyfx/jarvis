@@ -54,6 +54,12 @@ configuration, orchestrator, API, voice engine or database migrations.
 5. Windows Python has no IANA timezone database in the existing virtualenv.
    Prayer scheduling needs `tzdata`; never substitute a fixed UTC offset for
    an IANA location, and never modify Claude's installed environment to test it.
+6. `ToolCall.status` preserves dispatch lifecycle, not `ToolResult.status`.
+   A non-OK wire result may carry data without optional failure/refusal fields;
+   persisting it as `completed` loses the distinction from OK outside the audit.
+   The personality adapter therefore protects **all** tool-bearing turns until
+   explicit execution status is available. This branch does not change the
+   active dispatcher, protocol, ORM or schema to resolve that larger issue.
 
 ## Validation baseline
 
