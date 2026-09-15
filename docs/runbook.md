@@ -89,6 +89,11 @@ already running.
 
 `jarvis.bat` starts only the agent. Use it when the backend runs somewhere else.
 
+**Closing the window with the X button is not the same as Ctrl+C.** PowerShell
+does not always run the launcher's shutdown then, and the backend keeps running
+with no agent attached — reminders still fire, and nothing is listening to
+deliver them. `stop-jarvis.bat` cleans that up, and is safe to run at any time.
+
 | Symptom | Where to look |
 |---|---|
 | "the database did not start" | `.pgdata\server.log` |
