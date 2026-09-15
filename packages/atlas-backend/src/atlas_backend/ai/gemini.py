@@ -142,6 +142,10 @@ class GeminiProvider:
         self._max_retries = settings.ai_max_retries
         self._retry_base_delay = settings.ai_retry_base_delay_s
         self.model = settings.gemini_model
+        #: Tried when the first one is unavailable rather than wrong. Empty
+        #: means there is nothing to fall back to, which is a supported
+        #: configuration and not a degraded one.
+        self._fallback_model = settings.gemini_fallback_model
 
     async def _post(self, url: str, payload: dict[str, Any]) -> httpx.Response:
         if self._client is not None:
@@ -153,7 +157,36 @@ class GeminiProvider:
 
     async def complete(self, request: AIRequest) -> AIResponse:
         payload = self._build_payload(request)
-        url = f"{self._base_url}/models/{self.model}:generateContent"
+
+        # The configured model first, then the fallback if there is one.
+        # Measured cause: `gemini-flash-latest` answered 503 "experiencing high
+        # demand" for several minutes, which took the entire assistant down —
+        # every scenario, not one. Retrying the same overloaded model harder is
+        # not an answer to that; asking a different one is.
+        models = self._models()
+        for model in models:
+            try:
+                body = await self._ask(model, payload)
+            except _UnavailableError as exc:
+                # Only when the model is *unavailable*, never when the request
+                # was wrong: a 400 fails identically everywhere, and retrying it
+                # on a second model doubles the delay and hides the cause.
+                if model == models[-1]:
+                    raise AIProviderError(f"model returned HTTP {exc.status}") from exc
+                log.warning("ai_falling_back", tried=model, status=exc.status)
+                continue
+            return self._parse(body)
+
+        raise AIProviderError("no model answered")
+
+    def _models(self) -> tuple[str, ...]:
+        if self._fallback_model and self._fallback_model != self.model:
+            return (self.model, self._fallback_model)
+        return (self.model,)
+
+    async def _ask(self, model: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """One model, with retries. Raises rather than returning a failure."""
+        url = f"{self._base_url}/models/{model}:generateContent"
 
         for attempt in range(self._max_retries + 1):
             try:
@@ -180,14 +213,17 @@ class GeminiProvider:
                 await asyncio.sleep(delay)
                 continue
 
-            raise AIProviderError(f"model returned HTTP {response.status_code}")
+            raise (
+                _UnavailableError(response.status_code)
+                if response.status_code in _RETRYABLE_STATUS
+                else AIProviderError(f"model returned HTTP {response.status_code}")
+            )
 
         try:
-            body = response.json()
+            parsed: dict[str, Any] = response.json()
         except (ValueError, json.JSONDecodeError) as exc:
             raise MalformedResponseError("model response was not JSON") from exc
-
-        return self._parse(body)
+        return parsed
 
     def _headers(self) -> dict[str, str]:
         return {"x-goog-api-key": self._api_key, "Content-Type": "application/json"}
@@ -297,6 +333,19 @@ def _as_int(value: Any) -> int | None:
 
 
 #: Statuses worth trying again: a rate limit or a momentarily unhealthy backend.
+class _UnavailableError(Exception):
+    """This model could not answer right now. Another one might.
+
+    Internal: the caller sees an ``AIProviderError`` once every model has been
+    tried. Separate from it so that "overloaded" and "your request is wrong"
+    take different paths — only the first is worth asking someone else about.
+    """
+
+    def __init__(self, status: int) -> None:
+        super().__init__(f"HTTP {status}")
+        self.status = status
+
+
 #: 4xx other than 429 are the caller's fault and will fail identically.
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 

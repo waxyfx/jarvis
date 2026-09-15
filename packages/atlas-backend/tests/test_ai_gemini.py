@@ -39,6 +39,10 @@ def make_settings(**overrides: Any) -> Settings:
         "server_signing_key": b64u_encode(bytes(range(32))),
         "gemini_api_key": API_KEY,
         "gemini_model": "test-model",
+        # Off unless a test asks for it. These tests count requests, and a
+        # fallback model doubles the count for a reason that has nothing to do
+        # with what they are measuring.
+        "gemini_fallback_model": "",
     }
     return Settings(**(base | overrides))
 
@@ -514,3 +518,78 @@ class TestConfiguration:
         settings = make_settings()
         assert API_KEY not in repr(settings)
         assert API_KEY not in str(settings.gemini_api_key)
+
+
+class TestFallingBackToAnotherModel:
+    """One overloaded model should not take the whole assistant down.
+
+    Measured cause, not a hypothetical: `gemini-flash-latest` answered 503
+    "experiencing high demand" for several minutes, and every scenario failed
+    at once with "языковая модель недоступна". Retrying the same overloaded
+    model harder is not an answer to that; asking a different one is.
+    """
+
+    async def test_an_overloaded_model_is_replaced_by_the_fallback(self) -> None:
+        asked: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            asked.append(request.url.path)
+            if "first" in request.url.path:
+                return httpx.Response(503)
+            return httpx.Response(200, json=candidate([{"text": "готово"}]))
+
+        provider = GeminiProvider(
+            make_settings(gemini_model="first", gemini_fallback_model="second", ai_max_retries=0),
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+
+        answer = await provider.complete(request_for())
+
+        assert answer.text == "готово"
+        assert any("first" in path for path in asked)
+        assert any("second" in path for path in asked)
+
+    async def test_a_bad_request_is_not_retried_on_another_model(self) -> None:
+        """A 400 is the caller's fault and fails identically everywhere.
+        Falling back would double the delay and hide the cause."""
+        asked: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            asked.append(request.url.path)
+            return httpx.Response(400)
+
+        provider = GeminiProvider(
+            make_settings(gemini_model="first", gemini_fallback_model="second", ai_max_retries=0),
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+
+        with pytest.raises(AIProviderError):
+            await provider.complete(request_for())
+
+        assert len(asked) == 1
+
+    async def test_both_being_unavailable_is_still_reported(self) -> None:
+        provider = GeminiProvider(
+            make_settings(gemini_model="first", gemini_fallback_model="second", ai_max_retries=0),
+            client=httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(503))),
+        )
+
+        with pytest.raises(AIProviderError, match="503"):
+            await provider.complete(request_for())
+
+    async def test_no_fallback_configured_is_a_supported_configuration(self) -> None:
+        asked: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            asked.append(request.url.path)
+            return httpx.Response(503)
+
+        provider = GeminiProvider(
+            make_settings(gemini_fallback_model="", ai_max_retries=0),
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+
+        with pytest.raises(AIProviderError):
+            await provider.complete(request_for())
+
+        assert len(asked) == 1

@@ -106,6 +106,11 @@ class Settings(BaseSettings):
     #: model; pin a specific id here if you need reproducibility, and let
     #: e2e/test_gemini_live.py tell you when behaviour shifts.
     gemini_model: str = "gemini-flash-latest"
+    #: Tried when the first model answers 503 or 429 rather than an error about
+    #: the request. Measured cause: `gemini-flash-latest` returned "experiencing
+    #: high demand" for several minutes, which took every scenario down at once.
+    #: Empty disables the fallback, which is a supported configuration.
+    gemini_fallback_model: str = "gemini-flash-lite-latest"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
 
     # --------------------------------------------------------------- tracker
